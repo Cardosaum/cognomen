@@ -88,4 +88,4 @@ cognomen's own code only requires `Option::is_some_and` (Rust 1.70).
 
 Dual-licensed under **MIT OR Apache-2.0** -- see
 [`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE-APACHE`](LICENSE-APACHE).
-Copyright (c) 2026 Cardosaum.
+Copyright (c) 2026 Matheus Cardoso.
