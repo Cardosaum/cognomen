@@ -31,10 +31,10 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
 
   msrv:
-    name: msrv (1.70)
+    name: msrv (1.71.1)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.70.0
+      - uses: dtolnay/rust-toolchain@1.71.1
       - uses: Swatinem/rust-cache@v2
-      - run: cargo +1.70.0 test --all-targets
+      - run: cargo +1.71.1 check

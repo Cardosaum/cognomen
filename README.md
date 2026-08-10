@@ -58,7 +58,9 @@ For an enum `E`, the derive adds two `const fn`s:
 
 ## MSRV
 
-Rust **1.70** (uses `Option::is_some_and`).
+Rust **1.71.1** — determined with `cargo-msrv` (bisect, default deps). The
+floor is set by the pinned `proc-macro2` dependency (needs rustc ≥ 1.71);
+cognomen's own code only requires `Option::is_some_and` (Rust 1.70).
 
 ## License
 

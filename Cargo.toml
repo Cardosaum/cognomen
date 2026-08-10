@@ -2,7 +2,7 @@
 name = "cognomen"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.71.1"
 license = "MIT OR Apache-2.0"
 description = "Derive stable, case-configured string labels for unit-like enum variants."
 repository = "https://github.com/Cardosaum/cognomen"
