@@ -78,6 +78,20 @@ Accessor for each case:
 | `lower`                      | `label_lower`             |
 | `upper`                      | `label_upper`             |
 
+For the reverse direction, the derive implements two fallible conversions
+that accept a string in any declared case and return the matching variant:
+
+- `TryFrom<&str> for E`, giving `E::try_from("single_process")`.
+- `FromStr for E`, giving `"single_process".parse::<E>()`.
+
+Both return a `FromLabelError` when the string matches no variant; the error
+implements `Display` and `std::error::Error`, and reports the offending input.
+
+```rust
+assert_eq!("single-process".parse::<Mode>(), Ok(Mode::MultiProcess));
+assert_eq!(Mode::try_from("multi_process"), Ok(Mode::MultiProcess));
+```
+
 ## MSRV
 
 Rust **1.71.1**, determined with `cargo-msrv` (bisect, default deps). The

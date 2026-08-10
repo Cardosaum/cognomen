@@ -268,12 +268,72 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         })
         .collect::<Vec<_>>();
 
+    // Reverse path: given a label in any declared case, produce the variant.
+    // Collect every declared-case label per variant, deduplicated.
+    let mut reverse_arms = Vec::new();
+    let mut label_owner: std::collections::BTreeMap<String, &Ident> =
+        std::collections::BTreeMap::new();
+    for &v in &variants {
+        let mut labels: Vec<String> = attr
+            .styles
+            .iter()
+            .map(|style| style.convert(&v.to_string()))
+            .collect();
+        labels.sort();
+        labels.dedup();
+        let lits: Vec<syn::LitStr> = labels
+            .iter()
+            .map(|label| syn::LitStr::new(label, v.span()))
+            .collect();
+        for lit in &lits {
+            if let Some(owner) = label_owner.insert(lit.value(), v) {
+                if owner != v {
+                    return Err(syn::Error::new(
+                        v.span(),
+                        format!(
+                            "generated label `{}` is shared by multiple variants",
+                            lit.value()
+                        ),
+                    ));
+                }
+            }
+        }
+        let pat = quote! { #(#lits)|* };
+        reverse_arms.push(quote! { #pat => Ok(Self::#v) });
+    }
+
+    // A proc-macro crate cannot export ordinary items, so the derived impls
+    // carry their own hidden error type in a per-enum helper module.
+    let helper = format_ident!("cognomen_{}", name);
+    let helper_mod = quote! {
+        #[doc(hidden)]
+        #[allow(non_snake_case)]
+        mod #helper {
+            /// Error produced when a string does not convert back to a variant.
+            #[derive(Clone, PartialEq, Eq, Debug)]
+            pub struct FromLabelError {
+                /// The input string that matched no variant label.
+                pub input: ::std::string::String,
+            }
+
+            impl ::core::fmt::Display for FromLabelError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "no cognomen label matches `{}`", self.input)
+                }
+            }
+
+            impl ::std::error::Error for FromLabelError {}
+        }
+    };
+
     // `label()` / `as_str()` are aliases for the default (first) case.
     let default_method = format_ident!("{}", attr.default.method_name());
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     Ok(quote! {
+        #helper_mod
+
         impl #impl_generics #name #ty_generics #where_clause {
             /// Stable label for this variant in the default (first) case.
             #[inline]
@@ -290,6 +350,28 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             }
 
             #(#case_methods)*
+        }
+
+        impl #impl_generics ::core::convert::TryFrom<&str> for #name #ty_generics #where_clause {
+            type Error = #helper::FromLabelError;
+            #[inline]
+            fn try_from(s: &str) -> Result<Self, Self::Error> {
+                match s {
+                    #(#reverse_arms,)*
+                    _ => Err(#helper::FromLabelError { input: s.to_owned() }),
+                }
+            }
+        }
+
+        impl #impl_generics ::core::str::FromStr for #name #ty_generics #where_clause {
+            type Err = #helper::FromLabelError;
+            #[inline]
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    #(#reverse_arms,)*
+                    _ => Err(#helper::FromLabelError { input: s.to_owned() }),
+                }
+            }
         }
     })
 }

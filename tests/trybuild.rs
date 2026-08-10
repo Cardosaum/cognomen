@@ -14,4 +14,5 @@ fn ui() {
     t.compile_fail("tests/ui/fail_missing_attr.rs");
     t.compile_fail("tests/ui/fail_fields.rs");
     t.compile_fail("tests/ui/fail_duplicate_case.rs");
+    t.compile_fail("tests/ui/fail_collision.rs");
 }

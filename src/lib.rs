@@ -14,7 +14,7 @@
 //!
 //! // The first case listed is the default; every case gets a `label_<case>`
 //! // accessor. `label()` / `as_str()` alias the default.
-//! #[derive(Cognomen)]
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 //! #[cognomen(snake_case, kebab-case)]
 //! enum Mode {
 //!     SingleProcess, // "single_process" / "single-process"
@@ -25,10 +25,20 @@
 //! assert_eq!(Mode::MultiProcess.as_str(), "multi_process");
 //! assert_eq!(Mode::SingleProcess.label_kebab(), "single-process");
 //! assert_eq!(Mode::MultiProcess.label_kebab(), "multi-process");
+//!
+//! // Parse any declared case back to the variant.
+//! assert_eq!(Mode::try_from("single_process"), Ok(Mode::SingleProcess));
+//! assert_eq!(Mode::try_from("single-process"), Ok(Mode::SingleProcess));
+//! assert_eq!("multi_process".parse::<Mode>(), Ok(Mode::MultiProcess));
+//! assert!(Mode::try_from("hovercraft").is_err());
 //! ```
 //!
 //! List more than one case comma-separated in the `#[cognomen(...)]` attribute;
 //! the **first** is the default returned by `label()` / `as_str()`.
+//!
+//! The derive also implements the reverse path so the round trip is complete.
+//! `TryFrom<&str>` and `FromStr` accept a string in any declared case and
+//! return the variant, or a `FromLabelError` when nothing matches.
 //!
 //! Supported case styles and their accessors:
 //!
