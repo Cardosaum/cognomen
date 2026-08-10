@@ -1,0 +1,23 @@
+[package]
+name = "cognomen"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+license = "Apache-2.0"
+description = "Derive stable, case-configured string labels for unit-like enum variants."
+repository = "https://github.com/Cardosaum/cognomen"
+readme = "README.md"
+keywords = ["derive", "enum", "label", "string", "case"]
+categories = ["development-tools::procedural-macro-helpers"]
+publish = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+
+[dev-dependencies]
+trybuild = "1"

@@ -1,0 +1,5 @@
+error: missing #[labeled(<case>)] container attribute (e.g. #[labeled(snake_case)])
+ --> tests/ui/fail_missing_attr.rs:4:6
+  |
+4 | enum Mode {
+  |      ^^^^
