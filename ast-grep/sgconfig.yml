@@ -1,0 +1,18 @@
+# ast-grep (AST grep) configuration for cognomen.
+#
+# Scoped under ast-grep/ to keep the repository root clean. Invoke from the
+# repository root with -c ast-grep/sgconfig.yml.
+#
+# Rules under rules/ enforce source-hygiene conventions:
+#   - ascii-only        forbids non-ASCII characters in Rust source.
+#   - no-non-ascii-md   forbids non-ASCII characters in Markdown, which
+#                       covers em and en dashes.
+#
+# Run locally from the repository root:
+#   ast-grep scan  -c ast-grep/sgconfig.yml
+#   ast-grep test  -c ast-grep/sgconfig.yml
+ruleDirs:
+  - rules
+
+testConfigs:
+  - testDir: rule-tests

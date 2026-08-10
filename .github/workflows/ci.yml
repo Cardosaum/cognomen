@@ -38,8 +38,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: cargo-bins/cargo-binstall@main
       - run: cargo binstall -y --no-confirm ast-grep
-      - run: ast-grep test
-      - run: ast-grep scan
+      - run: ast-grep test -c ast-grep/sgconfig.yml
+      - run: ast-grep scan -c ast-grep/sgconfig.yml
 
   msrv:
     name: msrv (1.71.1)
