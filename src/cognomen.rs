@@ -1,4 +1,4 @@
-//! `#[derive(Labeled)]` implementation.
+//! `#[derive(Cognomen)]` implementation.
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -24,7 +24,7 @@ impl CaseStyle {
         Self::from_str_style(&s).ok_or_else(|| {
             syn::Error::new(
                 id.span(),
-                "unknown labeled case style; expected snake_case|kebab_case|kebab-case|camelCase|PascalCase|SCREAMING_SNAKE_CASE|lower|upper",
+                "unknown cognomen case style; expected snake_case|kebab_case|kebab-case|camelCase|PascalCase|SCREAMING_SNAKE_CASE|lower|upper",
             )
         })
     }
@@ -88,12 +88,12 @@ impl CaseStyle {
     }
 }
 
-/// `#[labeled(snake_case)]` or `#[labeled(case = snake_case)]`
-struct LabeledAttr {
+/// `#[cognomen(snake_case)]` or `#[cognomen(case = snake_case)]`
+struct CognomenAttr {
     style: CaseStyle,
 }
 
-impl Parse for LabeledAttr {
+impl Parse for CognomenAttr {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         if input.peek(Ident) && input.peek2(Token![=]) {
             let key: Ident = input.parse()?;
@@ -113,7 +113,7 @@ impl Parse for LabeledAttr {
             let second: Ident = input.parse()?;
             let joined = format!("{first}-{second}");
             let style = CaseStyle::from_str_style(&joined).ok_or_else(|| {
-                syn::Error::new(first.span(), format!("unknown labeled style `{joined}`"))
+                syn::Error::new(first.span(), format!("unknown cognomen style `{joined}`"))
             })?;
             return Ok(Self { style });
         }
@@ -159,12 +159,12 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
 
     let mut style = None;
     for attr in &input.attrs {
-        if attr.path().is_ident("labeled") {
-            let parsed: LabeledAttr = attr.parse_args()?;
+        if attr.path().is_ident("cognomen") {
+            let parsed: CognomenAttr = attr.parse_args()?;
             if style.is_some() {
                 return Err(syn::Error::new(
                     attr.span(),
-                    "duplicate #[labeled(...)] attribute",
+                    "duplicate #[cognomen(...)] attribute",
                 ));
             }
             style = Some(parsed.style);
@@ -173,14 +173,14 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     let style = style.ok_or_else(|| {
         syn::Error::new(
             name.span(),
-            "missing #[labeled(<case>)] container attribute (e.g. #[labeled(snake_case)])",
+            "missing #[cognomen(<case>)] container attribute (e.g. #[cognomen(snake_case)])",
         )
     })?;
 
     let Data::Enum(data) = &input.data else {
         return Err(syn::Error::new(
             name.span(),
-            "Labeled can only be derived for enums",
+            "Cognomen can only be derived for enums",
         ));
     };
 
@@ -189,7 +189,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         if !matches!(variant.fields, Fields::Unit) {
             return Err(syn::Error::new(
                 variant.span(),
-                "Labeled only supports unit variants (no fields)",
+                "Cognomen only supports unit variants (no fields)",
             ));
         }
         let vname = &variant.ident;
@@ -202,7 +202,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     if arms.is_empty() {
         return Err(syn::Error::new(
             name.span(),
-            "Labeled enum must have at least one variant",
+            "Cognomen enum must have at least one variant",
         ));
     }
 

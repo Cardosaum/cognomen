@@ -1,19 +1,19 @@
-use cognomen::Labeled;
+use cognomen::Cognomen;
 
-#[derive(Labeled)]
-#[labeled(camelCase)]
+#[derive(Cognomen)]
+#[cognomen(camelCase)]
 enum Camel {
     SingleProcess,
 }
 
-#[derive(Labeled)]
-#[labeled(PascalCase)]
+#[derive(Cognomen)]
+#[cognomen(PascalCase)]
 enum Pascal {
     SingleProcess,
 }
 
-#[derive(Labeled)]
-#[labeled(SCREAMING_SNAKE_CASE)]
+#[derive(Cognomen)]
+#[cognomen(SCREAMING_SNAKE_CASE)]
 enum Screaming {
     SingleProcess,
 }

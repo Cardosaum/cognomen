@@ -1,6 +1,6 @@
-use cognomen::Labeled;
+use cognomen::Cognomen;
 
-#[derive(Labeled)]
+#[derive(Cognomen)]
 enum Mode {
     A,
 }

@@ -1,7 +1,7 @@
-use cognomen::Labeled;
+use cognomen::Cognomen;
 
-#[derive(Labeled)]
-#[labeled(snake_case)]
+#[derive(Cognomen)]
+#[cognomen(snake_case)]
 struct NotAnEnum {
     x: u8,
 }

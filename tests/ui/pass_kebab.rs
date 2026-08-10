@@ -1,7 +1,7 @@
-use cognomen::Labeled;
+use cognomen::Cognomen;
 
-#[derive(Labeled)]
-#[labeled(kebab-case)]
+#[derive(Cognomen)]
+#[cognomen(kebab-case)]
 enum Mode {
     SingleProcess,
     MultiProcess,

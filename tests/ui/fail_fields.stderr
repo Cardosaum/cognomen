@@ -1,4 +1,4 @@
-error: Labeled only supports unit variants (no fields)
+error: Cognomen only supports unit variants (no fields)
  --> tests/ui/fail_fields.rs:7:5
   |
 7 |     WithField(u8),

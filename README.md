@@ -10,10 +10,10 @@ time and is emitted as a `&'static str`, so calling `label()` has no runtime
 cost.
 
 ```rust
-use cognomen::Labeled;
+use cognomen::Cognomen;
 
-#[derive(Labeled)]
-#[labeled(snake_case)]
+#[derive(Cognomen)]
+#[cognomen(snake_case)]
 enum Mode {
     SingleProcess, // "single_process"
     MultiProcess,  // "multi_process"
@@ -25,7 +25,7 @@ assert_eq!(Mode::MultiProcess.label(), "multi_process");
 
 ## Case styles
 
-| `#[labeled(...)]`         | `VariantName` becomes |
+| `#[cognomen(...)]`         | `VariantName` becomes |
 |---------------------------|-----------------------|
 | `snake_case`              | `variant_name`        |
 | `kebab-case`              | `variant-name`        |
@@ -36,14 +36,14 @@ assert_eq!(Mode::MultiProcess.label(), "multi_process");
 | `upper`                   | `VARIANTNAME`         |
 
 Underscore spellings (`kebab_case`) are accepted, as is the explicit
-`#[labeled(case = snake_case)]` form.
+`#[cognomen(case = snake_case)]` form.
 
 ## Requirements
 
 - Derive on **enums only**.
 - **Unit variants only** (no fields).
 - At least one variant.
-- A `#[labeled(<case style>)]` container attribute.
+- A `#[cognomen(<case style>)]` container attribute.
 
 Violations are compile-time errors. The failure cases are pinned by
 [trybuild](https://docs.rs/trybuild) UI tests under `tests/ui/`.

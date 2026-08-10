@@ -1,4 +1,4 @@
-error: Labeled can only be derived for enums
+error: Cognomen can only be derived for enums
  --> tests/ui/fail_not_enum.rs:5:8
   |
 5 | struct NotAnEnum {
