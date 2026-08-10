@@ -3,8 +3,9 @@ language: Markdown
 severity: error
 message: Non-ASCII character in Markdown. Only ASCII (0x00-0x7F) is allowed in .md files.
 note: |
-  .md files must be pure ASCII. Use "--" for em/en dashes, "..." for ellipses,
-  "->" for arrows, ">=" for comparisons.
+  .md files must be pure ASCII. In prose, prefer plain ASCII punctuation such
+  as a period, comma, semicolon, or colon instead of ASCII dash or arrow
+  substitutes.
 files:
   - '*.md'
 rule:

@@ -4,8 +4,9 @@ severity: error
 message: Non-ASCII character in Rust source. Only ASCII (0x00-0x7F) is allowed in code.
 note: |
   Write source as pure ASCII: identifiers, string and character literals, and
-  comments must not contain non-ASCII bytes. Use "--" instead of an em dash and
-  "..." instead of an ellipsis.
+  comments must not contain non-ASCII bytes. In prose, prefer plain ASCII
+  punctuation such as a period, comma, or colon instead of ASCII dash or
+  ellipsis substitutes.
 rule:
   any:
     - kind: identifier

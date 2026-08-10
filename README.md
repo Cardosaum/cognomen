@@ -1,6 +1,6 @@
 # cognomen
 
-*Cognomen* -- Latin for *"an extra name given to a person or thing"* -- is a
+*Cognomen* is Latin for "an extra name given to a person or thing". It is a
 zero-cost procedural macro that gives every unit-like variant of an enum a
 second name: a stable, case-configured string **label**.
 
@@ -61,12 +61,12 @@ Violations are compile-time errors. The failure cases are pinned by
 For an enum `E` with `#[cognomen(snake_case, kebab-case)]`, the derive adds a
 `const fn` per declared case, plus two aliases for the default (first):
 
-- `E::variant.label() -> &'static str` -- the default (first) case.
-- `E::variant.as_str() -> &'static str` -- an ergonomic alias for `label`.
-- `E::variant.label_snake() -> &'static str` -- the `snake_case` label.
-- `E::variant.label_kebab() -> &'static str` -- the `kebab-case` label.
+- `E::variant.label() -> &'static str`: the default (first) case.
+- `E::variant.as_str() -> &'static str`: an ergonomic alias for `label`.
+- `E::variant.label_snake() -> &'static str`: the `snake_case` label.
+- `E::variant.label_kebab() -> &'static str`: the `kebab-case` label.
 
-Case -> accessor:
+Accessor for each case:
 
 | case                         | accessor                  |
 |------------------------------|---------------------------|
@@ -80,12 +80,12 @@ Case -> accessor:
 
 ## MSRV
 
-Rust **1.71.1** -- determined with `cargo-msrv` (bisect, default deps). The
-floor is set by the pinned `proc-macro2` dependency (needs rustc >= 1.71);
-cognomen's own code only requires `Option::is_some_and` (Rust 1.70).
+Rust **1.71.1**, determined with `cargo-msrv` (bisect, default deps). The
+floor is set by the pinned `proc-macro2` dependency (needs rustc 1.71 or
+newer); cognomen's own code only requires `Option::is_some_and` (Rust 1.70).
 
 ## License
 
-Dual-licensed under **MIT OR Apache-2.0** -- see
+Dual-licensed under **MIT OR Apache-2.0**, see
 [`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE-APACHE`](LICENSE-APACHE).
 Copyright (c) 2026 Matheus Cardoso.
