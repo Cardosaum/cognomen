@@ -62,4 +62,6 @@ Rust **1.70** (uses `Option::is_some_and`).
 
 ## License
 
-Apache-2.0 — see [`LICENSE`](LICENSE). Copyright (c) 2026 Cardosaum contributors.
+Dual-licensed under **MIT OR Apache-2.0** — see
+[`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE-APACHE`](LICENSE-APACHE).
+Copyright (c) 2026 Cardosaum.
