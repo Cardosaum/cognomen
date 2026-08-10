@@ -1,0 +1,26 @@
+id: no-non-ascii-md
+snapshots:
+  ? |2
+
+    # Em dash —
+  : labels:
+    - source: |2
+
+        # Em dash —
+      style: primary
+      start: 0
+      end: 15
+  Rust 1.71.1 ≥ 1.70 → updated:
+    labels:
+    - source: Rust 1.71.1 ≥ 1.70 → updated
+      style: primary
+      start: 0
+      end: 32
+  ? |
+    café au lait
+  : labels:
+    - source: |
+        café au lait
+      style: primary
+      start: 0
+      end: 14

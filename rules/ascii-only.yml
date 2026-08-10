@@ -1,0 +1,22 @@
+id: ascii-only
+language: Rust
+severity: error
+message: Non-ASCII character in Rust source. Only ASCII (0x00-0x7F) is allowed in code.
+note: |
+  Write source as pure ASCII: identifiers, string and character literals, and
+  comments must not contain non-ASCII bytes. Use "--" instead of an em dash and
+  "..." instead of an ellipsis.
+rule:
+  any:
+    - kind: identifier
+      regex: '[^\x00-\x7F]'
+    - kind: string_literal
+      regex: '[^\x00-\x7F]'
+    - kind: raw_string_literal
+      regex: '[^\x00-\x7F]'
+    - kind: char_literal
+      regex: '[^\x00-\x7F]'
+    - kind: line_comment
+      regex: '[^\x00-\x7F]'
+    - kind: block_comment
+      regex: '[^\x00-\x7F]'

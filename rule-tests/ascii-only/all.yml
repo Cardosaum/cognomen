@@ -1,0 +1,20 @@
+id: ascii-only
+valid:
+  - |
+    pub fn label(self) -> &'static str {
+        "snake_case"
+    }
+  - |
+    // pure ascii comment; -- dashes are fine
+    enum Mode {
+        Alpha,
+        Beta,
+    }
+invalid:
+  - |
+    // café in a comment
+    enum Mode { Alpha }
+  - |
+    fn grüßen() {}
+  - |
+    const GREETING: &str = "héllo";

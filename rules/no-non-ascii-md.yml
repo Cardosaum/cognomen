@@ -1,0 +1,13 @@
+id: no-non-ascii-md
+language: Markdown
+severity: error
+message: Non-ASCII character in Markdown. Only ASCII (0x00-0x7F) is allowed in .md files.
+note: |
+  .md files must be pure ASCII. Use "--" for em/en dashes, "..." for ellipses,
+  "->" for arrows, ">=" for comparisons.
+files:
+  - '*.md'
+rule:
+  all:
+    - kind: document
+    - regex: '[^\x00-\x7F]'

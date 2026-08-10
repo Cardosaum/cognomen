@@ -30,6 +30,17 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings
 
+  hygiene:
+    name: source hygiene (ast-grep ascii)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: cargo-bins/cargo-binstall@main
+      - run: cargo binstall -y --no-confirm ast-grep
+      - run: ast-grep test
+      - run: ast-grep scan
+
   msrv:
     name: msrv (1.71.1)
     runs-on: ubuntu-latest

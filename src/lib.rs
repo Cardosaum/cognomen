@@ -1,6 +1,6 @@
 //! # cognomen
 //!
-//! *Cognomen* — Latin for "an extra name given to a person or thing" — is a
+//! *Cognomen* -- Latin for "an extra name given to a person or thing" -- is a
 //! proc-macro derive that gives every unit-like variant of an enum a second
 //! name: a stable, case-configured string label exposed via [`label`](Cognomen).
 //!
@@ -64,7 +64,7 @@ use proc_macro::TokenStream;
 /// Container attribute (required):
 ///
 /// - `#[cognomen(snake_case)]`
-/// - `#[cognomen(snake_case, kebab-case)]` — one or more comma-separated
+/// - `#[cognomen(snake_case, kebab-case)]` -- one or more comma-separated
 ///   cases; the **first** is the default.
 ///
 /// Supported styles: `snake_case`, `kebab-case`, `camelCase`, `PascalCase`,
@@ -72,7 +72,7 @@ use proc_macro::TokenStream;
 /// `kebab_case`).
 ///
 /// Every case in the list generates a `label_<case>` const fn
-/// (`label_snake`, `label_kebab`, `label_pascal`, …). [`label`](Self) and
+/// (`label_snake`, `label_kebab`, `label_pascal`, ...). [`label`](Self) and
 /// `as_str` are aliases for the default (first) case.
 #[proc_macro_derive(Cognomen, attributes(cognomen))]
 pub fn derive_cognomen(input: TokenStream) -> TokenStream {

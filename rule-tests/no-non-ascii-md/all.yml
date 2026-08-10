@@ -1,0 +1,16 @@
+id: no-non-ascii-md
+valid:
+  - |
+    # Title
+
+    A heading with pure ASCII -- and an arrow -> and a comparison >=.
+invalid:
+  - |
+
+    # Em dash —
+
+  - |
+    café au lait
+
+  - |
+    Rust 1.71.1 ≥ 1.70 → updated

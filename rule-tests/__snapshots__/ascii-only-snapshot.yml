@@ -1,0 +1,23 @@
+id: ascii-only
+snapshots:
+  ? |
+    // café in a comment
+    enum Mode { Alpha }
+  : labels:
+    - source: // café in a comment
+      style: primary
+      start: 0
+      end: 21
+  'const GREETING: &str = "héllo";':
+    labels:
+    - source: '"héllo"'
+      style: primary
+      start: 23
+      end: 31
+  ? |
+    fn grüßen() {}
+  : labels:
+    - source: grüßen
+      style: primary
+      start: 3
+      end: 11
