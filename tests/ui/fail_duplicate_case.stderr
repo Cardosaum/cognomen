@@ -1,0 +1,5 @@
+error: duplicate cognomen case style
+ --> tests/ui/fail_duplicate_case.rs:4:46
+  |
+4 | #[cognomen(snake_case, kebab-case, snake_case)]
+  |                                              ^

@@ -1,12 +1,12 @@
 //! `#[derive(Cognomen)]` implementation.
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Fields, Ident, Result, Token};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum CaseStyle {
     Snake,
     Kebab,
@@ -41,6 +41,32 @@ impl CaseStyle {
             "lower" | "lowercase" => Some(Self::Lower),
             "upper" | "uppercase" => Some(Self::Upper),
             _ => None,
+        }
+    }
+
+    /// Canonical attribute keyword for this case style (used in docs).
+    fn name(self) -> &'static str {
+        match self {
+            Self::Snake => "snake_case",
+            Self::Kebab => "kebab-case",
+            Self::Camel => "camelCase",
+            Self::Pascal => "PascalCase",
+            Self::ScreamingSnake => "SCREAMING_SNAKE_CASE",
+            Self::Lower => "lower",
+            Self::Upper => "upper",
+        }
+    }
+
+    /// Suffix for the per-case `label_<case>` accessor.
+    fn method_name(self) -> &'static str {
+        match self {
+            Self::Snake => "label_snake",
+            Self::Kebab => "label_kebab",
+            Self::Camel => "label_camel",
+            Self::Pascal => "label_pascal",
+            Self::ScreamingSnake => "label_screaming_snake",
+            Self::Lower => "label_lower",
+            Self::Upper => "label_upper",
         }
     }
 
@@ -88,38 +114,49 @@ impl CaseStyle {
     }
 }
 
-/// `#[cognomen(snake_case)]` or `#[cognomen(case = snake_case)]`
+/// `#[cognomen(snake_case)]` or `#[cognomen(snake_case, kebab-case)]`.
+///
+/// The first case listed is the default returned by `label()`/`as_str()`.
 struct CognomenAttr {
-    style: CaseStyle,
+    styles: Vec<CaseStyle>,
+    default: CaseStyle,
+}
+
+fn parse_case_style(input: ParseStream<'_>) -> Result<CaseStyle> {
+    // A style may be multi-token: kebab-case is `Ident - Ident`.
+    let first: Ident = input.parse()?;
+    if input.peek(Token![-]) {
+        input.parse::<Token![-]>()?;
+        let second: Ident = input.parse()?;
+        let joined = format!("{first}-{second}");
+        CaseStyle::from_str_style(&joined).ok_or_else(|| {
+            syn::Error::new(first.span(), format!("unknown cognomen style `{joined}`"))
+        })
+    } else {
+        CaseStyle::parse_ident(&first)
+    }
 }
 
 impl Parse for CognomenAttr {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
-        if input.peek(Ident) && input.peek2(Token![=]) {
-            let key: Ident = input.parse()?;
-            if key != "case" {
-                return Err(syn::Error::new(key.span(), "expected `case = <style>`"));
+        let first = parse_case_style(input)?;
+        let mut styles = vec![first];
+        while !input.is_empty() {
+            input.parse::<Token![,]>()?;
+            if input.is_empty() {
+                break; // trailing comma
             }
-            input.parse::<Token![=]>()?;
-            let style_id: Ident = input.parse()?;
-            return Ok(Self {
-                style: CaseStyle::parse_ident(&style_id)?,
-            });
+            let style = parse_case_style(input)?;
+            if styles.contains(&style) {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "duplicate cognomen case style",
+                ));
+            }
+            styles.push(style);
         }
-        // Style may be multi-token: kebab-case uses Ident - Ident
-        let first: Ident = input.parse()?;
-        if input.peek(Token![-]) {
-            input.parse::<Token![-]>()?;
-            let second: Ident = input.parse()?;
-            let joined = format!("{first}-{second}");
-            let style = CaseStyle::from_str_style(&joined).ok_or_else(|| {
-                syn::Error::new(first.span(), format!("unknown cognomen style `{joined}`"))
-            })?;
-            return Ok(Self { style });
-        }
-        Ok(Self {
-            style: CaseStyle::parse_ident(&first)?,
-        })
+        let default = styles[0];
+        Ok(Self { styles, default })
     }
 }
 
@@ -157,20 +194,19 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     let input: DeriveInput = syn::parse2(input)?;
     let name = &input.ident;
 
-    let mut style = None;
-    for attr in &input.attrs {
-        if attr.path().is_ident("cognomen") {
-            let parsed: CognomenAttr = attr.parse_args()?;
-            if style.is_some() {
+    let mut attr = None;
+    for attr_ in &input.attrs {
+        if attr_.path().is_ident("cognomen") {
+            if attr.is_some() {
                 return Err(syn::Error::new(
-                    attr.span(),
+                    attr_.span(),
                     "duplicate #[cognomen(...)] attribute",
                 ));
             }
-            style = Some(parsed.style);
+            attr = Some(attr_.parse_args::<CognomenAttr>()?);
         }
     }
-    let style = style.ok_or_else(|| {
+    let attr = attr.ok_or_else(|| {
         syn::Error::new(
             name.span(),
             "missing #[cognomen(<case>)] container attribute (e.g. #[cognomen(snake_case)])",
@@ -184,7 +220,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         ));
     };
 
-    let mut arms = Vec::new();
+    let mut variants: Vec<&Ident> = Vec::new();
     for variant in &data.variants {
         if !matches!(variant.fields, Fields::Unit) {
             return Err(syn::Error::new(
@@ -192,31 +228,58 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
                 "Cognomen only supports unit variants (no fields)",
             ));
         }
-        let vname = &variant.ident;
-        let label = style.convert(&vname.to_string());
-        arms.push(quote! {
-            Self::#vname => #label
-        });
+        variants.push(&variant.ident);
     }
 
-    if arms.is_empty() {
+    if variants.is_empty() {
         return Err(syn::Error::new(
             name.span(),
             "Cognomen enum must have at least one variant",
         ));
     }
 
+    // A `label_<case>` accessor for every declared case.
+    let case_methods = attr
+        .styles
+        .iter()
+        .map(|style| {
+            let method = format_ident!("{}", style.method_name());
+            let doc = format!(
+                "Stable label for this variant in the `{}` case.",
+                style.name()
+            );
+            let arms = variants
+                .iter()
+                .map(|v| {
+                    let label = style.convert(&v.to_string());
+                    quote! { Self::#v => #label }
+                })
+                .collect::<Vec<_>>();
+            quote! {
+                #[doc = #doc]
+                #[inline]
+                #[must_use]
+                pub const fn #method(self) -> &'static str {
+                    match self {
+                        #(#arms,)*
+                    }
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // `label()` / `as_str()` are aliases for the default (first) case.
+    let default_method = format_ident!("{}", attr.default.method_name());
+
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     Ok(quote! {
         impl #impl_generics #name #ty_generics #where_clause {
-            /// Stable label for this variant under the derive case style.
+            /// Stable label for this variant in the default (first) case.
             #[inline]
             #[must_use]
             pub const fn label(self) -> &'static str {
-                match self {
-                    #(#arms,)*
-                }
+                self.#default_method()
             }
 
             /// Alias of [`Self::label`] (ergonomic for config / logs).
@@ -225,6 +288,8 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             pub const fn as_str(self) -> &'static str {
                 self.label()
             }
+
+            #(#case_methods)*
         }
     })
 }

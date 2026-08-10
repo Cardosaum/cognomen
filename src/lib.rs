@@ -12,36 +12,44 @@
 //! ```rust
 //! use cognomen::Cognomen;
 //!
+//! // The first case listed is the default; every case gets a `label_<case>`
+//! // accessor. `label()` / `as_str()` alias the default.
 //! #[derive(Cognomen)]
-//! #[cognomen(snake_case)]
+//! #[cognomen(snake_case, kebab-case)]
 //! enum Mode {
-//!     SingleProcess, // "single_process"
-//!     MultiProcess,  // "multi_process"
+//!     SingleProcess, // "single_process" / "single-process"
+//!     MultiProcess,  // "multi_process"  / "multi-process"
 //! }
 //!
-//! assert_eq!(Mode::SingleProcess.as_str(), "single_process");
-//! assert_eq!(Mode::MultiProcess.label(), "multi_process");
+//! assert_eq!(Mode::SingleProcess.label(), "single_process");
+//! assert_eq!(Mode::MultiProcess.as_str(), "multi_process");
+//! assert_eq!(Mode::SingleProcess.label_kebab(), "single-process");
+//! assert_eq!(Mode::MultiProcess.label_kebab(), "multi-process");
 //! ```
 //!
-//! Supported case styles:
+//! List more than one case comma-separated in the `#[cognomen(...)]` attribute;
+//! the **first** is the default returned by `label()` / `as_str()`.
 //!
-//! | `#[cognomen(...)]` | `VariantName` becomes |
-//! |--------------------|-----------------------|
-//! | `snake_case`       | `variant_name`        |
-//! | `kebab-case`       | `variant-name`        |
-//! | `camelCase`        | `variantName`         |
-//! | `PascalCase`       | `VariantName`         |
-//! | `SCREAMING_SNAKE_CASE` | `VARIANT_NAME`   |
-//! | `lower`            | `variantname`         |
-//! | `upper`            | `VARIANTNAME`         |
+//! Supported case styles and their accessors:
+//!
+//! | `#[cognomen(...)]`       | method                  | `VariantName` becomes |
+//! |--------------------------|-------------------------|-----------------------|
+//! | `snake_case`             | `label_snake`           | `variant_name`        |
+//! | `kebab-case`             | `label_kebab`           | `variant-name`        |
+//! | `camelCase`              | `label_camel`           | `variantName`         |
+//! | `PascalCase`             | `label_pascal`          | `VariantName`         |
+//! | `SCREAMING_SNAKE_CASE`   | `label_screaming_snake` | `VARIANT_NAME`        |
+//! | `lower`                  | `label_lower`           | `variantname`         |
+//! | `upper`                  | `label_upper`           | `VARIANTNAME`         |
 //!
 //! # Requirements
 //!
 //! - Derive on **enums only**.
 //! - **Unit variants only** (no fields).
 //! - At least one variant.
-//! - A `#[cognomen(<case style>)]` container attribute (also accepts the
-//!   `#[cognomen(case = <style>)]` spelling).
+//! - At least one `#[cognomen(<case style>)]` container attribute with one or
+//!   more comma-separated cases (e.g. `#[cognomen(snake_case, kebab-case)]`).
+//!   The **first** case is the default.
 //!
 //! Violations are compile-time errors; the failure cases are pinned by
 //! [trybuild](https://docs.rs/trybuild) UI tests under `tests/ui/`.
@@ -50,25 +58,22 @@ mod cognomen;
 
 use proc_macro::TokenStream;
 
-/// Derive `as_str` / `label` for unit-like enums with a case style.
+/// Derive `label` / `as_str` for unit-like enums, plus a `label_<case>`
+/// accessor for every declared case.
 ///
 /// Container attribute (required):
 ///
 /// - `#[cognomen(snake_case)]`
-/// - `#[cognomen(kebab-case)]`
-/// - `#[cognomen(camelCase)]`
-/// - `#[cognomen(PascalCase)]`
-/// - `#[cognomen(SCREAMING_SNAKE_CASE)]`
-/// - `#[cognomen(lower)]`
-/// - `#[cognomen(upper)]`
+/// - `#[cognomen(snake_case, kebab-case)]` — one or more comma-separated
+///   cases; the **first** is the default.
 ///
-/// The same styles are accepted with underscores (`kebab_case`) and in the
-/// `#[cognomen(case = <style>)]` spelling.
+/// Supported styles: `snake_case`, `kebab-case`, `camelCase`, `PascalCase`,
+/// `SCREAMING_SNAKE_CASE`, `lower`, `upper` (also with underscores, e.g.
+/// `kebab_case`).
 ///
-/// Adds two `const fn`s that return the variant's stable label:
-///
-/// - [`label`](Self) — the primary accessor.
-/// - `as_str` — an ergonomic alias suited to config and log call sites.
+/// Every case in the list generates a `label_<case>` const fn
+/// (`label_snake`, `label_kebab`, `label_pascal`, …). [`label`](Self) and
+/// `as_str` are aliases for the default (first) case.
 #[proc_macro_derive(Cognomen, attributes(cognomen))]
 pub fn derive_cognomen(input: TokenStream) -> TokenStream {
     cognomen::derive(input.into())

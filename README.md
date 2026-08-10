@@ -12,15 +12,18 @@ cost.
 ```rust
 use cognomen::Cognomen;
 
+// The first case listed is the default; every case gets a `label_<case>`
+// accessor. `label()` / `as_str()` alias the default.
 #[derive(Cognomen)]
-#[cognomen(snake_case)]
+#[cognomen(snake_case, kebab-case)]
 enum Mode {
-    SingleProcess, // "single_process"
-    MultiProcess,  // "multi_process"
+    SingleProcess, // "single_process" / "single-process"
+    MultiProcess,  // "multi_process"  / "multi-process"
 }
 
-assert_eq!(Mode::SingleProcess.as_str(), "single_process");
-assert_eq!(Mode::MultiProcess.label(), "multi_process");
+assert_eq!(Mode::SingleProcess.label(), "single_process");
+assert_eq!(Mode::MultiProcess.as_str(), "multi_process");
+assert_eq!(Mode::SingleProcess.label_kebab(), "single-process");
 ```
 
 ## Case styles
@@ -35,26 +38,45 @@ assert_eq!(Mode::MultiProcess.label(), "multi_process");
 | `lower`                   | `variantname`         |
 | `upper`                   | `VARIANTNAME`         |
 
-Underscore spellings (`kebab_case`) are accepted, as is the explicit
-`#[cognomen(case = snake_case)]` form.
+Underscore spellings (`kebab_case`) are accepted.
+
+List more than one case comma-separated; the **first** listed is the default
+returned by `label()` / `as_str()`, and every listed case gets its own
+`label_<case>` accessor (from the "Generated API" table below).
 
 ## Requirements
 
 - Derive on **enums only**.
 - **Unit variants only** (no fields).
 - At least one variant.
-- A `#[cognomen(<case style>)]` container attribute.
+- A `#[cognomen(<case style>)]` container attribute with one or more
+  comma-separated cases (e.g. `#[cognomen(snake_case, kebab-case)]`). The
+  **first** case is the default.
 
 Violations are compile-time errors. The failure cases are pinned by
 [trybuild](https://docs.rs/trybuild) UI tests under `tests/ui/`.
 
 ## Generated API
 
-For an enum `E`, the derive adds two `const fn`s:
+For an enum `E` with `#[cognomen(snake_case, kebab-case)]`, the derive adds a
+`const fn` per declared case, plus two aliases for the default (first):
 
-- `E::variant.label() -> &'static str` — the primary accessor.
-- `E::variant.as_str() -> &'static str` — an ergonomic alias for config/log
-  call sites.
+- `E::variant.label() -> &'static str` — the default (first) case.
+- `E::variant.as_str() -> &'static str` — an ergonomic alias for `label`.
+- `E::variant.label_snake() -> &'static str` — the `snake_case` label.
+- `E::variant.label_kebab() -> &'static str` — the `kebab-case` label.
+
+Case → accessor:
+
+| case                         | accessor                  |
+|------------------------------|---------------------------|
+| `snake_case`                 | `label_snake`             |
+| `kebab-case`                 | `label_kebab`             |
+| `camelCase`                  | `label_camel`             |
+| `PascalCase`                 | `label_pascal`            |
+| `SCREAMING_SNAKE_CASE`       | `label_screaming_snake`   |
+| `lower`                      | `label_lower`             |
+| `upper`                      | `label_upper`             |
 
 ## MSRV
 
