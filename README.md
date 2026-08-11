@@ -4,16 +4,13 @@
 zero-cost procedural macro that gives every unit-like variant of an enum a
 second name: a stable, case-configured string **label**.
 
-It sits between an enum's Rust identifier and the strings a config file, log
-line, or wire message actually carries. Case conversion happens at compile
-time and is emitted as a `&'static str`, so calling `label()` has no runtime
-cost.
+Case conversion happens at compile time and is emitted as a `&'static str`.
 
 ```rust
 use cognomen::Cognomen;
 
 // The first case listed is the default; every case gets a `label_<case>`
-// accessor. `label()` / `as_str()` alias the default.
+// accessor. `label()` is the default.
 #[derive(Cognomen)]
 #[cognomen(snake_case, kebab-case)]
 enum Mode {
@@ -22,27 +19,23 @@ enum Mode {
 }
 
 assert_eq!(Mode::SingleProcess.label(), "single_process");
-assert_eq!(Mode::MultiProcess.as_str(), "multi_process");
 assert_eq!(Mode::SingleProcess.label_kebab(), "single-process");
 ```
 
 ## Case styles
 
-| `#[cognomen(...)]`         | `VariantName` becomes |
-|---------------------------|-----------------------|
-| `snake_case`              | `variant_name`        |
-| `kebab-case`              | `variant-name`        |
-| `camelCase`               | `variantName`         |
-| `PascalCase`              | `VariantName`         |
-| `SCREAMING_SNAKE_CASE`    | `VARIANT_NAME`        |
-| `lower`                   | `variantname`         |
-| `upper`                   | `VARIANTNAME`         |
+| `#[cognomen(...)]`       | short aliases                         | `VariantName` becomes |
+|--------------------------|---------------------------------------|-----------------------|
+| `snake_case`             | `snake`                               | `variant_name`        |
+| `kebab-case` / `kebab_case` | `kebab`                            | `variant-name`        |
+| `camelCase` / `camel_case`  | `camel`                            | `variantName`         |
+| `PascalCase` / `pascal_case` | `pascal`                          | `VariantName`         |
+| `SCREAMING_SNAKE_CASE` / `screaming_snake_case` | `screaming` | `VARIANT_NAME`        |
+| `lower`                  | `lowercase`                           | `variantname`         |
+| `upper`                  | `uppercase`                           | `VARIANTNAME`         |
 
-Underscore spellings (`kebab_case`) are accepted.
-
-List more than one case comma-separated; the **first** listed is the default
-returned by `label()` / `as_str()`, and every listed case gets its own
-`label_<case>` accessor (from the "Generated API" table below).
+List more than one case comma-separated; the **first** is the default returned
+by `label()`, and every listed case gets its own `label_<case>` accessor.
 
 ## Requirements
 
@@ -50,23 +43,20 @@ returned by `label()` / `as_str()`, and every listed case gets its own
 - **Unit variants only** (no fields).
 - At least one variant.
 - A `#[cognomen(<case style>)]` container attribute with one or more
-  comma-separated cases (e.g. `#[cognomen(snake_case, kebab-case)]`). The
-  **first** case is the default.
+  comma-separated cases. The **first** case is the default.
 
-Violations are compile-time errors. The failure cases are pinned by
+Violations are compile-time errors. Failure cases are pinned by
 [trybuild](https://docs.rs/trybuild) UI tests under `tests/ui/`.
 
 ## Generated API
 
-For an enum `E` with `#[cognomen(snake_case, kebab-case)]`, the derive adds a
-`const fn` per declared case, plus two aliases for the default (first):
+For an enum `E` with `#[cognomen(snake_case, kebab-case)]`:
 
-- `E::variant.label() -> &'static str`: the default (first) case.
-- `E::variant.as_str() -> &'static str`: an ergonomic alias for `label`.
-- `E::variant.label_snake() -> &'static str`: the `snake_case` label.
-- `E::variant.label_kebab() -> &'static str`: the `kebab-case` label.
+- `E::variant.label() -> &'static str` — default (first) case.
+- `E::variant.label_snake() -> &'static str`
+- `E::variant.label_kebab() -> &'static str`
 
-The default prefix is `label`. Use `prefix = "..."` in the attribute to change it:
+Default prefix is `label`. Use `prefix = "..."` to change it:
 
 ```rust
 #[derive(Cognomen)]
@@ -74,44 +64,35 @@ The default prefix is `label`. Use `prefix = "..."` in the attribute to change i
 enum Mode { SingleProcess, MultiProcess }
 assert_eq!(Mode::SingleProcess.label(), "single_process");
 assert_eq!(Mode::SingleProcess.my_label_kebab(), "single-process");
-
 ```
 
-Accessor for each case:
+| case                   | accessor                |
+|------------------------|-------------------------|
+| `snake_case`           | `label_snake`           |
+| `kebab-case`           | `label_kebab`           |
+| `camelCase`            | `label_camel`           |
+| `PascalCase`           | `label_pascal`          |
+| `SCREAMING_SNAKE_CASE` | `label_screaming_snake` |
+| `lower`                | `label_lower`           |
+| `upper`                | `label_upper`           |
 
-| case                         | accessor                  |
-|------------------------------|---------------------------|
-| `snake_case`                 | `label_snake`             |
-| `kebab-case`                 | `label_kebab`             |
-| `camelCase`                  | `label_camel`             |
-| `PascalCase`                 | `label_pascal`            |
-| `SCREAMING_SNAKE_CASE`       | `label_screaming_snake`   |
-| `lower`                      | `label_lower`             |
-| `upper`                      | `label_upper`             |
+Reverse direction — any declared case parses back to the variant:
 
-| prefix key                   | effect                    |
-|------------------------------|---------------------------|
-| `prefix = "my_label"`       | `my_label_snake`, etc.   |
+- `TryFrom<&str> for E`
+- `FromStr for E`
 
-For the reverse direction, the derive implements two fallible conversions
-that accept a string in any declared case and return the matching variant:
-
-- `TryFrom<&str> for E`, giving `E::try_from("single_process")`.
-- `FromStr for E`, giving `"single_process".parse::<E>()`.
-
-Both return a `FromLabelError` when the string matches no variant; the error
-implements `Display` and `std::error::Error`, and reports the offending input.
+Both return a `FromLabelError` when nothing matches (`Display` + `Error`).
 
 ```rust
-assert_eq!("single-process".parse::<Mode>(), Ok(Mode::MultiProcess));
+assert_eq!("single-process".parse::<Mode>(), Ok(Mode::SingleProcess));
 assert_eq!(Mode::try_from("multi_process"), Ok(Mode::MultiProcess));
 ```
 
 ## MSRV
 
-Rust **1.71.1**, determined with `cargo-msrv` (bisect, default deps). The
-floor is set by the pinned `proc-macro2` dependency (needs rustc 1.71 or
-newer); cognomen's own code only requires `Option::is_some_and` (Rust 1.70).
+Rust **1.71.1**, determined with `cargo-msrv` (bisect, default deps). The floor
+is set by the pinned `proc-macro2` dependency (needs rustc 1.71 or newer);
+cognomen's own code only requires `Option::is_some_and` (Rust 1.70).
 
 ## License
 

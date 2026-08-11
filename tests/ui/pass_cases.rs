@@ -19,7 +19,7 @@ enum Screaming {
 }
 
 fn main() {
-    assert_eq!(Camel::SingleProcess.as_str(), "singleProcess");
-    assert_eq!(Pascal::SingleProcess.as_str(), "SingleProcess");
-    assert_eq!(Screaming::SingleProcess.as_str(), "SINGLE_PROCESS");
+    assert_eq!(Camel::SingleProcess.label(), "singleProcess");
+    assert_eq!(Pascal::SingleProcess.label(), "SingleProcess");
+    assert_eq!(Screaming::SingleProcess.label(), "SINGLE_PROCESS");
 }

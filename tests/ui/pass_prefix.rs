@@ -19,7 +19,7 @@ enum Feature {
 fn main() {
     // Label values are unchanged — prefix only affects accessor names.
     assert_eq!(Transport::WebSocket.label(), "web_socket");
-    assert_eq!(Transport::UnixSocket.as_str(), "unix_socket");
+    assert_eq!(Transport::UnixSocket.label(), "unix_socket");
 
     // Per-case accessors use the custom prefix.
     assert_eq!(Transport::WebSocket.my_label_snake(), "web_socket");

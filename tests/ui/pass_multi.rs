@@ -18,7 +18,7 @@ enum Direction {
 
 fn main() {
     assert_eq!(Transport::WebSocket.label(), "web_socket");
-    assert_eq!(Transport::UnixSocket.as_str(), "unix_socket");
+    assert_eq!(Transport::UnixSocket.label(), "unix_socket");
     assert_eq!(Transport::WebSocket.label_kebab(), "web-socket");
     assert_eq!(Transport::UnixSocket.label_kebab(), "unix-socket");
 
@@ -27,7 +27,7 @@ fn main() {
 
     // Default is chosen by order: PascalCase here, not snake_case.
     assert_eq!(Direction::LeftHand.label(), "LeftHand");
-    assert_eq!(Direction::RightHand.as_str(), "RightHand");
+    assert_eq!(Direction::RightHand.label(), "RightHand");
     assert_eq!(Direction::LeftHand.label_snake(), "left_hand");
 
     // Reverse path: parse any declared case back to the variant.
