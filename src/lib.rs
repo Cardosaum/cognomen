@@ -12,7 +12,7 @@
 //! ```rust
 //! use cognomen::Cognomen;
 //!
-//! // The first case listed is the default; every case gets a `label_<case>`
+//! // The first case listed is the default; every case gets a `<prefix>_<case>`
 //! // accessor. `label()` / `as_str()` alias the default.
 //! #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 //! #[cognomen(snake_case, kebab-case)]
@@ -81,9 +81,14 @@ use proc_macro::TokenStream;
 /// `SCREAMING_SNAKE_CASE`, `lower`, `upper` (also with underscores, e.g.
 /// `kebab_case`).
 ///
-/// Every case in the list generates a `label_<case>` const fn
+/// Every case in the list generates a `<prefix>_<case>` const fn
 /// (`label_snake`, `label_kebab`, `label_pascal`, ...). [`label`](Self) and
 /// `as_str` are aliases for the default (first) case.
+///
+/// Optional `prefix = "..."` changes the accessor name prefix
+/// (default `"label"`). Example:
+/// `#[cognomen(snake_case, prefix = "my_label")]` generates
+/// `my_label_snake()` instead of `label_snake()`.
 #[proc_macro_derive(Cognomen, attributes(cognomen))]
 pub fn derive_cognomen(input: TokenStream) -> TokenStream {
     cognomen::derive(input.into())

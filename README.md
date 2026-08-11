@@ -66,6 +66,17 @@ For an enum `E` with `#[cognomen(snake_case, kebab-case)]`, the derive adds a
 - `E::variant.label_snake() -> &'static str`: the `snake_case` label.
 - `E::variant.label_kebab() -> &'static str`: the `kebab-case` label.
 
+The default prefix is `label`. Use `prefix = "..."` in the attribute to change it:
+
+```rust
+#[derive(Cognomen)]
+#[cognomen(snake_case, kebab-case, prefix = "my_label")]
+enum Mode { SingleProcess, MultiProcess }
+assert_eq!(Mode::SingleProcess.label(), "single_process");
+assert_eq!(Mode::SingleProcess.my_label_kebab(), "single-process");
+
+```
+
 Accessor for each case:
 
 | case                         | accessor                  |
@@ -77,6 +88,10 @@ Accessor for each case:
 | `SCREAMING_SNAKE_CASE`       | `label_screaming_snake`   |
 | `lower`                      | `label_lower`             |
 | `upper`                      | `label_upper`             |
+
+| prefix key                   | effect                    |
+|------------------------------|---------------------------|
+| `prefix = "my_label"`       | `my_label_snake`, etc.   |
 
 For the reverse direction, the derive implements two fallible conversions
 that accept a string in any declared case and return the matching variant:

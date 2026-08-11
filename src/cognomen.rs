@@ -70,6 +70,15 @@ impl CaseStyle {
         }
     }
 
+    /// Full accessor name with a custom prefix (e.g. `"my_prefix"` → `"my_prefix_snake"`).
+    fn method_name_with_prefix(self, prefix: &str) -> String {
+        let suffix = self.method_name();
+        // method_name returns "label_<case>"; strip the "label_" prefix
+        // to get the case suffix, then reassemble with the custom prefix.
+        let case_suffix = suffix.strip_prefix("label_").expect("method_name always starts with label_");
+        format!("{prefix}_{case_suffix}")
+    }
+
     fn convert(self, pascal_ident: &str) -> String {
         let words = split_pascal_words(pascal_ident);
         match self {
@@ -117,11 +126,13 @@ impl CaseStyle {
 /// `#[cognomen(snake_case)]` or `#[cognomen(snake_case, kebab-case)]`.
 ///
 /// The first case listed is the default returned by `label()`/`as_str()`.
+/// Optional `prefix = "..."` changes the accessor name prefix (default `"label"`).
+/// Example: `#[cognomen(snake_case, prefix = "my_label")]` generates `my_label_snake()`."
 struct CognomenAttr {
     styles: Vec<CaseStyle>,
     default: CaseStyle,
+    prefix: String,
 }
-
 fn parse_case_style(input: ParseStream<'_>) -> Result<CaseStyle> {
     // A style may be multi-token: kebab-case is `Ident - Ident`.
     let first: Ident = input.parse()?;
@@ -139,24 +150,48 @@ fn parse_case_style(input: ParseStream<'_>) -> Result<CaseStyle> {
 
 impl Parse for CognomenAttr {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let first = parse_case_style(input)?;
-        let mut styles = vec![first];
+        let mut styles = Vec::new();
+        let mut prefix = String::from("label");
+
         while !input.is_empty() {
-            input.parse::<Token![,]>()?;
-            if input.is_empty() {
-                break; // trailing comma
+            if input.peek(syn::Ident) && input.peek2(Token![=]) {
+                // key = value pair
+                let key: Ident = input.parse()?;
+                input.parse::<Token![=]>()?;
+                let value: syn::LitStr = input.parse()?;
+                if key == "prefix" {
+                    prefix = value.value();
+                } else {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("unknown cognomen key `{key}`"),
+                    ));
+                }
+            } else {
+                let style = parse_case_style(input)?;
+                if styles.contains(&style) {
+                    return Err(syn::Error::new(
+                        input.span(),
+                        "duplicate cognomen case style",
+                    ));
+                }
+                styles.push(style);
             }
-            let style = parse_case_style(input)?;
-            if styles.contains(&style) {
-                return Err(syn::Error::new(
-                    input.span(),
-                    "duplicate cognomen case style",
-                ));
+
+            if !input.is_empty() {
+                input.parse::<Token![,]>()?;
             }
-            styles.push(style);
         }
+
+        if styles.is_empty() {
+            return Err(syn::Error::new(
+                input.span(),
+                "missing cognomen case style (e.g. #[cognomen(snake_case)])",
+            ));
+        }
+
         let default = styles[0];
-        Ok(Self { styles, default })
+        Ok(Self { styles, default, prefix })
     }
 }
 
@@ -237,13 +272,12 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             "Cognomen enum must have at least one variant",
         ));
     }
-
-    // A `label_<case>` accessor for every declared case.
+    // A `<prefix>_<case>` accessor for every declared case.
     let case_methods = attr
         .styles
         .iter()
         .map(|style| {
-            let method = format_ident!("{}", style.method_name());
+            let method = format_ident!("{}", style.method_name_with_prefix(&attr.prefix));
             let doc = format!(
                 "Stable label for this variant in the `{}` case.",
                 style.name()
@@ -327,7 +361,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     };
 
     // `label()` / `as_str()` are aliases for the default (first) case.
-    let default_method = format_ident!("{}", attr.default.method_name());
+    let default_method = format_ident!("{}", attr.default.method_name_with_prefix(&attr.prefix));
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 

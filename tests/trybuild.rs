@@ -9,7 +9,7 @@ fn ui() {
     t.pass("tests/ui/pass_snake.rs");
     t.pass("tests/ui/pass_kebab.rs");
     t.pass("tests/ui/pass_cases.rs");
-    t.pass("tests/ui/pass_multi.rs");
+    t.pass("tests/ui/pass_prefix.rs");
     t.compile_fail("tests/ui/fail_not_enum.rs");
     t.compile_fail("tests/ui/fail_missing_attr.rs");
     t.compile_fail("tests/ui/fail_fields.rs");
