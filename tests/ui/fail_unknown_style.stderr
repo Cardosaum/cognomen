@@ -1,0 +1,5 @@
+error: unknown cognomen case style; expected snake_case|snake|kebab_case|kebab-case|kebab|camelCase|camel|PascalCase|pascal|SCREAMING_SNAKE_CASE|screaming|lower|upper|title|title_case
+ --> tests/ui/fail_unknown_style.rs:4:12
+  |
+4 | #[cognomen(not_a_case)]
+  |            ^^^^^^^^^^

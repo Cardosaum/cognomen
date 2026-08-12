@@ -1,0 +1,26 @@
+[package]
+name = "cognomen-macros"
+version = "0.1.0"
+authors = ["Matheus Cardoso"]
+edition = "2021"
+rust-version = "1.71.1"
+license = "MIT OR Apache-2.0"
+description = "Proc-macro implementation for the cognomen crate."
+repository = "https://github.com/Cardosaum/cognomen"
+readme = false
+publish = true
+include = ["src/**/*", "Cargo.toml"]
+
+[lib]
+proc-macro = true
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+serde = []
+
+[dependencies]
+syn = "2"
+quote = "1"
+proc-macro2 = "1"

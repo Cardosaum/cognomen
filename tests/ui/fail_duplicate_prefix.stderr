@@ -1,0 +1,5 @@
+error: duplicate cognomen prefix
+ --> tests/ui/fail_duplicate_prefix.rs:4:38
+  |
+4 | #[cognomen(snake_case, prefix = "a", prefix = "b")]
+  |                                      ^^^^^^

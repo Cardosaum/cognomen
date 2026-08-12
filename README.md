@@ -1,17 +1,27 @@
 # cognomen
 
-*Cognomen* is Latin for "an extra name given to a person or thing". It is a
-zero-cost procedural macro that gives every unit-like variant of an enum a
-second name: a stable, case-configured string **label**.
+[![crates.io](https://img.shields.io/crates/v/cognomen.svg)](https://crates.io/crates/cognomen)
+[![docs.rs](https://docs.rs/cognomen/badge.svg)](https://docs.rs/cognomen)
+[![license](https://img.shields.io/crates/l/cognomen.svg)](https://github.com/Cardosaum/cognomen)
 
-Case conversion happens at compile time and is emitted as a `&'static str`.
+*Cognomen* is Latin for "an extra name given to a person or thing". This crate
+gives every unit-like enum variant a second, stable string **label**.
+
+Downstream crates use it as the seam between a Rust ident and the string a
+config file, log line, CLI flag, or wire protocol actually carries. Case
+conversion runs at compile time and is emitted as a `&'static str`.
+
+Full API reference: <https://docs.rs/cognomen>
+
+```toml
+[dependencies]
+cognomen = "0.1"
+```
 
 ```rust
 use cognomen::Cognomen;
 
-// The first case listed is the default; every case gets a `label_<case>`
-// accessor. `label()` is the default.
-#[derive(Cognomen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 #[cognomen(snake_case, kebab-case)]
 enum Mode {
     SingleProcess, // "single_process" / "single-process"
@@ -19,80 +29,101 @@ enum Mode {
 }
 
 assert_eq!(Mode::SingleProcess.label(), "single_process");
+assert_eq!(Mode::MultiProcess.as_str(), "multi_process");
 assert_eq!(Mode::SingleProcess.label_kebab(), "single-process");
+assert_eq!(Mode::try_from("single-process"), Ok(Mode::SingleProcess));
+assert!(Mode::SingleProcess == "single-process");
 ```
+
+The first case in `#[cognomen(...)]` is the default (`label()` / `as_str()` /
+`Display` / serde out). Every listed case also gets `{prefix}_{case}`.
 
 ## Case styles
 
-| `#[cognomen(...)]`       | short aliases                         | `VariantName` becomes |
-|--------------------------|---------------------------------------|-----------------------|
-| `snake_case`             | `snake`                               | `variant_name`        |
-| `kebab-case` / `kebab_case` | `kebab`                            | `variant-name`        |
-| `camelCase` / `camel_case`  | `camel`                            | `variantName`         |
-| `PascalCase` / `pascal_case` | `pascal`                          | `VariantName`         |
-| `SCREAMING_SNAKE_CASE` / `screaming_snake_case` | `screaming` | `VARIANT_NAME`        |
-| `lower`                  | `lowercase`                           | `variantname`         |
-| `upper`                  | `uppercase`                           | `VARIANTNAME`         |
+| `#[cognomen(...)]` | short aliases | `VariantName` becomes |
+|--------------------|---------------|-----------------------|
+| `snake_case` | `snake` | `variant_name` |
+| `kebab-case` / `kebab_case` | `kebab` | `variant-name` |
+| `camelCase` / `camel_case` | `camel` | `variantName` |
+| `PascalCase` / `pascal_case` | `pascal` | `VariantName` |
+| `SCREAMING_SNAKE_CASE` | `screaming` | `VARIANT_NAME` |
+| `lower` / `lowercase` | | `variantname` |
+| `upper` / `uppercase` | | `VARIANTNAME` |
+| `title` / `title_case` | | `Variant Name` |
 
-List more than one case comma-separated; the **first** is the default returned
-by `label()`, and every listed case gets its own `label_<case>` accessor.
+## Attributes
 
-## Requirements
+**Container** (required): `#[cognomen(<case>, ...)]`
 
-- Derive on **enums only**.
-- **Unit variants only** (no fields).
-- At least one variant.
-- A `#[cognomen(<case style>)]` container attribute with one or more
-  comma-separated cases. The **first** case is the default.
+- One or more cases, comma-separated. First is the default.
+- `prefix = "cfg"`: accessors become `cfg_snake`, `cfg_kebab`, ...
+  (non-empty ASCII identifier; default `label`).
+- `crate = ::other::cognomen`: generated path when you re-export this crate.
 
-Violations are compile-time errors. Failure cases are pinned by
-[trybuild](https://docs.rs/trybuild) UI tests under `tests/ui/`.
+**Variant** (optional): `#[cognomen(rename = "io_error")]`
 
-## Generated API
-
-For an enum `E` with `#[cognomen(snake_case, kebab-case)]`:
-
-- `E::variant.label() -> &'static str` — default (first) case.
-- `E::variant.label_snake() -> &'static str`
-- `E::variant.label_kebab() -> &'static str`
-
-Default prefix is `label`. Use `prefix = "..."` to change it:
+Sets the default label to that exact string and accepts it when parsing.
+Other case accessors still convert from the ident.
 
 ```rust
 #[derive(Cognomen)]
-#[cognomen(snake_case, kebab-case, prefix = "my_label")]
-enum Mode { SingleProcess, MultiProcess }
-assert_eq!(Mode::SingleProcess.label(), "single_process");
-assert_eq!(Mode::SingleProcess.my_label_kebab(), "single-process");
+#[cognomen(snake_case, kebab-case)]
+enum Wire {
+    #[cognomen(rename = "io_error")]
+    IoFailed,
+    OpenFailed,
+}
+
+assert_eq!(Wire::IoFailed.label(), "io_error");
+assert_eq!(Wire::IoFailed.label_snake(), "io_failed");
+assert_eq!(Wire::from_label("io_error").unwrap(), Wire::IoFailed);
 ```
 
-| case                   | accessor                |
-|------------------------|-------------------------|
-| `snake_case`           | `label_snake`           |
-| `kebab-case`           | `label_kebab`           |
-| `camelCase`            | `label_camel`           |
-| `PascalCase`           | `label_pascal`          |
-| `SCREAMING_SNAKE_CASE` | `label_screaming_snake` |
-| `lower`                | `label_lower`           |
-| `upper`                | `label_upper`           |
+Violations (non-enum, fields, missing case, collisions, bad prefix) are
+compile errors, pinned by trybuild tests under `tests/ui/`.
 
-Reverse direction — any declared case parses back to the variant:
+## Generated API
 
-- `TryFrom<&str> for E`
-- `FromStr for E`
+For `#[cognomen(snake_case, kebab-case)]` on `E`:
 
-Both return a `FromLabelError` when nothing matches (`Display` + `Error`).
+| item | notes |
+|------|--------|
+| `label()` / `as_str()` | default case, or `rename` |
+| `label_snake()`, `label_kebab()`, ... | one method per declared case |
+| `E::VARIANTS`, `E::LABELS` | declaration order |
+| `Display`, `AsRef<str>`, `PartialEq<str>` | compare against any declared label |
+| `TryFrom<&str>`, `FromStr`, `from_label` | feature `alloc` (on by default) |
+| `Serialize` / `Deserialize` | feature `serde`; out is `label()`, in accepts any declared case |
 
-```rust
-assert_eq!("single-process".parse::<Mode>(), Ok(Mode::SingleProcess));
-assert_eq!(Mode::try_from("multi_process"), Ok(Mode::MultiProcess));
+## Features
+
+| feature | default | unlocks |
+|---------|---------|---------|
+| `std` | yes | `alloc` + `std::error::Error` for `FromLabelError` |
+| `alloc` | via `std` | parse |
+| `serde` | no | `Serialize` / `Deserialize` |
+
+`no_std`, including embedded:
+
+```toml
+cognomen = { version = "0.1", default-features = false }
 ```
+
+Labels, `Display`, `AsRef`, and `VARIANTS` need no allocator. Add
+`features = ["alloc"]` to parse strings. Add `features = ["serde"]` for wire
+formats.
+
+## Word splitting
+
+Idents split on ASCII camel-case boundaries. Acronyms stay together
+(`HTTPResponse` -> `http_response`). Digits stay glued (`Utf8` -> `utf8`,
+`IPv4` -> `i_pv4`). Re-Pascal of an acronym title-cases the run
+(`HTTPResponse` -> `HttpResponse`).
 
 ## MSRV
 
-Rust **1.71.1**, determined with `cargo-msrv` (bisect, default deps). The floor
-is set by the pinned `proc-macro2` dependency (needs rustc 1.71 or newer);
-cognomen's own code only requires `Option::is_some_and` (Rust 1.70).
+Rust **1.71.1**. Floor is the pinned `proc-macro2` (rustc 1.71+). Cognomen
+itself only needs `Option::is_some_and` (1.70).
 
 ## License
 

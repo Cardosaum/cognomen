@@ -1,0 +1,5 @@
+error: Cognomen enum must have at least one variant
+ --> tests/ui/fail_empty_enum.rs:5:6
+  |
+5 | enum Mode {}
+  |      ^^^^

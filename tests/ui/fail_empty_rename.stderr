@@ -1,0 +1,5 @@
+error: cognomen rename must not be empty
+ --> tests/ui/fail_empty_rename.rs:6:25
+  |
+6 |     #[cognomen(rename = "")]
+  |                         ^^
