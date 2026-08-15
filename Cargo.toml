@@ -19,6 +19,12 @@ publish = true
 members = ["macros"]
 resolver = "2"
 
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[lints]
+workspace = true
+
 [features]
 default = ["std"]
 std = ["alloc"]

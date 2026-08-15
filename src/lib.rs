@@ -121,7 +121,6 @@
 //! Rust 1.71.1.
 
 #![no_std]
-#![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 extern crate self as cognomen;

@@ -22,3 +22,6 @@ serde = []
 syn = "2"
 quote = "1"
 proc-macro2 = "1"
+
+[lints]
+workspace = true
