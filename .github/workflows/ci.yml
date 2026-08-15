@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: cargo-bins/cargo-binstall@main
-      - run: cargo binstall -y --no-confirm ast-grep
+      - run: cargo binstall -y ast-grep
       - run: ast-grep test -c ast-grep/sgconfig.yml
       - run: ast-grep scan -c ast-grep/sgconfig.yml
 
