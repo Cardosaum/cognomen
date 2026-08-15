@@ -1,0 +1,5 @@
+error: unknown cognomen key `rename`
+ --> tests/ui/fail_unknown_key.rs:4:24
+  |
+4 | #[cognomen(snake_case, rename = "x")]
+  |                        ^^^^^^

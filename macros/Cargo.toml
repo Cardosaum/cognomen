@@ -1,0 +1,31 @@
+[package]
+name = "cognomen-macros"
+version = "0.1.0"
+authors = ["Matheus Cardoso"]
+edition = "2021"
+rust-version = "1.71.1"
+license = "MIT OR Apache-2.0"
+description = "Proc-macro implementation for the cognomen crate."
+repository = "https://github.com/Cardosaum/cognomen"
+homepage = "https://github.com/Cardosaum/cognomen"
+documentation = "https://docs.rs/cognomen-macros"
+readme = false
+keywords = ["derive", "enum", "label", "proc-macro"]
+categories = ["development-tools::procedural-macro-helpers"]
+publish = true
+include = ["src/**/*", "Cargo.toml", "LICENSE-*"]
+
+[lib]
+proc-macro = true
+
+[features]
+# Proc-macros run in rustc (always std). This only gates generated serde impls.
+serde = []
+
+[dependencies]
+syn = "2"
+quote = "1"
+proc-macro2 = "1"
+
+[lints]
+workspace = true
