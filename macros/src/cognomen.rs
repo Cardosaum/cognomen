@@ -2,9 +2,10 @@
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
+use std::collections::BTreeMap;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{Data, DeriveInput, Fields, Ident, Result, Token};
+use syn::{Attribute, Data, DeriveInput, Fields, Ident, Result, Token};
 
 const STYLE_HELP: &str = "snake_case|snake|kebab_case|kebab-case|kebab|camelCase|camel|PascalCase|pascal|SCREAMING_SNAKE_CASE|screaming|lower|upper|title|title_case";
 
@@ -22,19 +23,17 @@ enum CaseStyle {
 
 impl CaseStyle {
     fn from_str_style(s: &str) -> Option<Self> {
-        match s {
-            "snake_case" | "snake" => Some(Self::Snake),
-            "kebab_case" | "kebab-case" | "kebab" => Some(Self::Kebab),
-            "camelCase" | "camel_case" | "camel" => Some(Self::Camel),
-            "PascalCase" | "pascal_case" | "pascal" => Some(Self::Pascal),
-            "SCREAMING_SNAKE_CASE" | "screaming_snake_case" | "screaming" => {
-                Some(Self::ScreamingSnake)
-            }
-            "lower" | "lowercase" => Some(Self::Lower),
-            "upper" | "uppercase" => Some(Self::Upper),
-            "title" | "title_case" | "TitleCase" => Some(Self::Title),
-            _ => None,
-        }
+        Some(match s {
+            "snake_case" | "snake" => Self::Snake,
+            "kebab_case" | "kebab-case" | "kebab" => Self::Kebab,
+            "camelCase" | "camel_case" | "camel" => Self::Camel,
+            "PascalCase" | "pascal_case" | "pascal" => Self::Pascal,
+            "SCREAMING_SNAKE_CASE" | "screaming_snake_case" | "screaming" => Self::ScreamingSnake,
+            "lower" | "lowercase" => Self::Lower,
+            "upper" | "uppercase" => Self::Upper,
+            "title" | "title_case" | "TitleCase" => Self::Title,
+            _ => return None,
+        })
     }
 
     fn name(self) -> &'static str {
@@ -63,47 +62,26 @@ impl CaseStyle {
         }
     }
 
-    fn method_name(self, prefix: &str) -> String {
-        format!("{prefix}_{}", self.suffix())
-    }
-
     fn convert(self, pascal_ident: &str) -> String {
         let words = split_pascal_words(pascal_ident);
-        match self {
-            Self::Snake | Self::Kebab => {
-                let sep = if matches!(self, Self::Snake) {
-                    '_'
-                } else {
-                    '-'
-                };
-                join_lower(&words, sep)
-            }
-            Self::ScreamingSnake => join_upper(&words, '_'),
-            Self::Camel => {
-                let mut out = String::new();
-                for (i, w) in words.iter().enumerate() {
-                    if i == 0 {
-                        out.push_str(&w.to_ascii_lowercase());
-                    } else {
-                        out.push_str(&capitalize(w));
-                    }
+        let mut out = String::new();
+        for (i, w) in words.iter().enumerate() {
+            if i > 0 {
+                match self {
+                    Self::Snake | Self::ScreamingSnake => out.push('_'),
+                    Self::Kebab => out.push('-'),
+                    Self::Title => out.push(' '),
+                    Self::Camel | Self::Pascal | Self::Lower | Self::Upper => {}
                 }
-                out
             }
-            Self::Pascal => words.iter().map(|w| capitalize(w)).collect(),
-            Self::Lower => words.iter().map(|w| w.to_ascii_lowercase()).collect(),
-            Self::Upper => words.iter().map(|w| w.to_ascii_uppercase()).collect(),
-            Self::Title => {
-                let mut out = String::new();
-                for (i, w) in words.iter().enumerate() {
-                    if i > 0 {
-                        out.push(' ');
-                    }
-                    out.push_str(&capitalize(w));
-                }
-                out
+            match self {
+                Self::Snake | Self::Kebab | Self::Lower => out.push_str(&w.to_ascii_lowercase()),
+                Self::ScreamingSnake | Self::Upper => out.push_str(&w.to_ascii_uppercase()),
+                Self::Camel if i == 0 => out.push_str(&w.to_ascii_lowercase()),
+                Self::Camel | Self::Pascal | Self::Title => out.push_str(&capitalize(w)),
             }
         }
+        out
     }
 }
 
@@ -112,7 +90,6 @@ impl CaseStyle {
 /// First case listed is the default returned by `label()`.
 struct CognomenAttr {
     styles: Vec<CaseStyle>,
-    default: CaseStyle,
     prefix: String,
     crate_path: syn::Path,
 }
@@ -127,56 +104,74 @@ fn parse_case_style(input: ParseStream<'_>) -> Result<(CaseStyle, Span)> {
         let joined = format!("{first}-{second}");
         let style = CaseStyle::from_str_style(&joined)
             .ok_or_else(|| syn::Error::new(span, format!("unknown cognomen style `{joined}`")))?;
-        Ok((style, span))
-    } else {
-        let s = first.to_string();
-        let style = CaseStyle::from_str_style(&s).ok_or_else(|| {
-            syn::Error::new(
-                span,
-                format!("unknown cognomen case style; expected {STYLE_HELP}"),
-            )
-        })?;
-        Ok((style, span))
+        return Ok((style, span));
     }
+    let s = first.to_string();
+    let style = CaseStyle::from_str_style(&s).ok_or_else(|| {
+        syn::Error::new(
+            span,
+            format!("unknown cognomen case style; expected {STYLE_HELP}"),
+        )
+    })?;
+    Ok((style, span))
+}
+
+fn parse_eq_litstr(input: ParseStream<'_>) -> Result<(Ident, syn::LitStr)> {
+    let key: Ident = input.parse()?;
+    input.parse::<Token![=]>()?;
+    Ok((key, input.parse()?))
+}
+
+fn set_once<T>(slot: &mut Option<T>, value: T, span: Span, msg: &str) -> Result<()> {
+    if slot.is_some() {
+        return Err(syn::Error::new(span, msg));
+    }
+    *slot = Some(value);
+    Ok(())
+}
+
+fn eat_comma(input: ParseStream<'_>) -> Result<()> {
+    if !input.is_empty() {
+        input.parse::<Token![,]>()?;
+    }
+    Ok(())
 }
 
 impl Parse for CognomenAttr {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let mut styles = Vec::new();
-        let mut prefix = String::from("label");
-        let mut seen_prefix = false;
+        let mut prefix = None;
         let mut crate_path = None;
-        let mut seen_crate = false;
 
         while !input.is_empty() {
             if input.peek(Token![crate]) && input.peek2(Token![=]) {
                 let crate_tok: Token![crate] = input.parse()?;
                 input.parse::<Token![=]>()?;
-                if seen_crate {
-                    return Err(syn::Error::new(crate_tok.span, "duplicate cognomen crate"));
-                }
-                seen_crate = true;
-                crate_path = Some(input.parse()?);
+                set_once(
+                    &mut crate_path,
+                    input.parse()?,
+                    crate_tok.span,
+                    "duplicate cognomen crate",
+                )?;
             } else if input.peek(syn::Ident) && input.peek2(Token![=]) {
-                let key: Ident = input.parse()?;
-                input.parse::<Token![=]>()?;
-                let value: syn::LitStr = input.parse()?;
-                if key == "prefix" {
-                    if seen_prefix {
-                        return Err(syn::Error::new(key.span(), "duplicate cognomen prefix"));
-                    }
-                    seen_prefix = true;
-                    prefix = value.value();
-                    if !is_ascii_ident(&prefix) {
-                        return Err(syn::Error::new(
-                            value.span(),
-                            "prefix must be a non-empty ASCII identifier (e.g. prefix = \"label\")",
-                        ));
-                    }
-                } else {
+                let (key, value) = parse_eq_litstr(input)?;
+                if key != "prefix" {
                     return Err(syn::Error::new(
                         key.span(),
                         format!("unknown cognomen key `{key}`"),
+                    ));
+                }
+                let text = value.value();
+                set_once(
+                    &mut prefix,
+                    text.clone(),
+                    key.span(),
+                    "duplicate cognomen prefix",
+                )?;
+                if !is_ascii_ident(&text) {
+                    return Err(syn::Error::new(
+                        value.span(),
+                        "prefix must be a non-empty ASCII identifier (e.g. prefix = \"label\")",
                     ));
                 }
             } else {
@@ -186,10 +181,7 @@ impl Parse for CognomenAttr {
                 }
                 styles.push(style);
             }
-
-            if !input.is_empty() {
-                input.parse::<Token![,]>()?;
-            }
+            eat_comma(input)?;
         }
 
         if styles.is_empty() {
@@ -199,11 +191,9 @@ impl Parse for CognomenAttr {
             ));
         }
 
-        let default = styles[0];
         Ok(Self {
             styles,
-            default,
-            prefix,
+            prefix: prefix.unwrap_or_else(|| String::from("label")),
             crate_path: crate_path.unwrap_or_else(|| syn::parse_quote!(::cognomen)),
         })
     }
@@ -217,29 +207,21 @@ impl Parse for VariantAttr {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let mut rename = None;
         while !input.is_empty() {
-            let key: Ident = input.parse()?;
-            input.parse::<Token![=]>()?;
-            let value: syn::LitStr = input.parse()?;
-            if key == "rename" {
-                if rename.is_some() {
-                    return Err(syn::Error::new(key.span(), "duplicate cognomen rename"));
-                }
-                if value.value().is_empty() {
-                    return Err(syn::Error::new(
-                        value.span(),
-                        "cognomen rename must not be empty",
-                    ));
-                }
-                rename = Some(value);
-            } else {
+            let (key, value) = parse_eq_litstr(input)?;
+            if key != "rename" {
                 return Err(syn::Error::new(
                     key.span(),
                     format!("unknown cognomen variant key `{key}`"),
                 ));
             }
-            if !input.is_empty() {
-                input.parse::<Token![,]>()?;
+            if value.value().is_empty() {
+                return Err(syn::Error::new(
+                    value.span(),
+                    "cognomen rename must not be empty",
+                ));
             }
+            set_once(&mut rename, value, key.span(), "duplicate cognomen rename")?;
+            eat_comma(input)?;
         }
         Ok(Self { rename })
     }
@@ -313,83 +295,47 @@ fn capitalize(w: &str) -> String {
     }
 }
 
-fn join_lower(words: &[String], sep: char) -> String {
-    let mut out = String::new();
-    for (i, w) in words.iter().enumerate() {
-        if i > 0 {
-            out.push(sep);
-        }
-        out.push_str(&w.to_ascii_lowercase());
-    }
-    out
-}
-
-fn join_upper(words: &[String], sep: char) -> String {
-    let mut out = String::new();
-    for (i, w) in words.iter().enumerate() {
-        if i > 0 {
-            out.push(sep);
-        }
-        out.push_str(&w.to_ascii_uppercase());
-    }
-    out
-}
-
-fn parse_variant_rename(variant: &syn::Variant) -> Result<Option<String>> {
-    let mut rename = None;
-    for attr in &variant.attrs {
+fn find_cognomen_attr<'a>(
+    attrs: &'a [Attribute],
+    duplicate_msg: &str,
+) -> Result<Option<&'a Attribute>> {
+    let mut found = None;
+    for attr in attrs {
         if !attr.path().is_ident("cognomen") {
             continue;
         }
-        if rename.is_some() {
-            return Err(syn::Error::new(
-                attr.span(),
-                "duplicate #[cognomen(...)] on variant",
-            ));
+        if found.is_some() {
+            return Err(syn::Error::new(attr.span(), duplicate_msg));
         }
-        let parsed: VariantAttr = attr.parse_args()?;
-        rename = parsed.rename.map(|l| l.value());
-        if rename.is_none() {
-            return Err(syn::Error::new(
-                attr.span(),
-                "variant #[cognomen(...)] requires rename = \"...\"",
-            ));
-        }
+        found = Some(attr);
     }
-    Ok(rename)
+    Ok(found)
 }
 
-pub fn derive(input: TokenStream) -> Result<TokenStream> {
-    let input: DeriveInput = syn::parse2(input)?;
-    let name = &input.ident;
+fn parse_variant_rename(variant: &syn::Variant) -> Result<Option<String>> {
+    let Some(attr) = find_cognomen_attr(&variant.attrs, "duplicate #[cognomen(...)] on variant")?
+    else {
+        return Ok(None);
+    };
+    let parsed: VariantAttr = attr.parse_args()?;
+    let Some(rename) = parsed.rename else {
+        return Err(syn::Error::new(
+            attr.span(),
+            "variant #[cognomen(...)] requires rename = \"...\"",
+        ));
+    };
+    Ok(Some(rename.value()))
+}
 
-    let mut attr = None;
-    for attr_ in &input.attrs {
-        if attr_.path().is_ident("cognomen") {
-            if attr.is_some() {
-                return Err(syn::Error::new(
-                    attr_.span(),
-                    "duplicate #[cognomen(...)] attribute",
-                ));
-            }
-            attr = Some(attr_.parse_args::<CognomenAttr>()?);
-        }
-    }
-    let attr = attr.ok_or_else(|| {
-        syn::Error::new(
-            name.span(),
-            "missing #[cognomen(<case>)] container attribute (e.g. #[cognomen(snake_case)])",
-        )
-    })?;
-
+fn unit_variants(input: &DeriveInput) -> Result<Vec<Variant<'_>>> {
     let Data::Enum(data) = &input.data else {
         return Err(syn::Error::new(
-            name.span(),
+            input.ident.span(),
             "Cognomen can only be derived for enums",
         ));
     };
 
-    let mut variants: Vec<Variant<'_>> = Vec::new();
+    let mut variants = Vec::with_capacity(data.variants.len());
     for variant in &data.variants {
         if !matches!(variant.fields, Fields::Unit) {
             return Err(syn::Error::new(
@@ -402,23 +348,70 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             rename: parse_variant_rename(variant)?,
         });
     }
-
     if variants.is_empty() {
         return Err(syn::Error::new(
-            name.span(),
+            input.ident.span(),
             "Cognomen enum must have at least one variant",
         ));
     }
+    Ok(variants)
+}
 
+fn reverse_eq_arms(
+    name: &Ident,
+    variants: &[Variant<'_>],
+    styles: &[CaseStyle],
+) -> Result<(Vec<TokenStream>, Vec<TokenStream>, Vec<String>)> {
+    let mut owner = BTreeMap::<String, &Ident>::new();
+    let mut reverse_arms = Vec::new();
+    let mut eq_arms = Vec::new();
+
+    for v in variants {
+        let labels = v.all_labels(styles);
+        let lits: Vec<syn::LitStr> = labels
+            .iter()
+            .map(|label| syn::LitStr::new(label, v.ident.span()))
+            .collect();
+        for label in &labels {
+            if let Some(prev) = owner.insert(label.clone(), v.ident) {
+                if prev != v.ident {
+                    return Err(syn::Error::new(
+                        v.ident.span(),
+                        format!("generated label `{label}` is shared by multiple variants"),
+                    ));
+                }
+            }
+        }
+        let ident = v.ident;
+        reverse_arms.push(quote! { #(#lits)|* => ::core::result::Result::Ok(#name::#ident) });
+        eq_arms.push(quote! { Self::#ident => matches!(other, #(#lits)|*) });
+    }
+
+    Ok((reverse_arms, eq_arms, owner.into_keys().collect()))
+}
+
+pub fn derive(input: TokenStream) -> Result<TokenStream> {
+    let input: DeriveInput = syn::parse2(input)?;
+    let name = &input.ident;
+
+    let attr = match find_cognomen_attr(&input.attrs, "duplicate #[cognomen(...)] attribute")? {
+        Some(a) => a.parse_args::<CognomenAttr>()?,
+        None => {
+            return Err(syn::Error::new(
+                name.span(),
+                "missing #[cognomen(<case>)] container attribute (e.g. #[cognomen(snake_case)])",
+            ));
+        }
+    };
+
+    let variants = unit_variants(&input)?;
     let crate_path = &attr.crate_path;
+    let default = attr.styles[0];
     let idents: Vec<&Ident> = variants.iter().map(|v| v.ident).collect();
-    let default_labels: Vec<String> = variants
-        .iter()
-        .map(|v| v.default_label(attr.default))
-        .collect();
+    let default_labels: Vec<String> = variants.iter().map(|v| v.default_label(default)).collect();
 
     let case_methods = attr.styles.iter().map(|style| {
-        let method = format_ident!("{}", style.method_name(&attr.prefix));
+        let method = format_ident!("{}_{}", attr.prefix, style.suffix());
         let doc = format!(
             "Stable label for this variant in the `{}` case.",
             style.name()
@@ -433,9 +426,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             #[inline]
             #[must_use]
             pub const fn #method(&self) -> &'static str {
-                match self {
-                    #(#arms,)*
-                }
+                match self { #(#arms,)* }
             }
         }
     });
@@ -448,45 +439,10 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             quote! { Self::#ident => #label }
         });
 
-    let mut reverse_arms = Vec::new();
-    let mut eq_arms = Vec::new();
-    let mut label_owner: std::collections::BTreeMap<String, &Ident> =
-        std::collections::BTreeMap::new();
-    let mut all_labels: Vec<String> = Vec::new();
-    for v in &variants {
-        let labels = v.all_labels(&attr.styles);
-        let lits: Vec<syn::LitStr> = labels
-            .iter()
-            .map(|label| syn::LitStr::new(label, v.ident.span()))
-            .collect();
-        for lit in &lits {
-            if let Some(owner) = label_owner.insert(lit.value(), v.ident) {
-                if owner != v.ident {
-                    return Err(syn::Error::new(
-                        v.ident.span(),
-                        format!(
-                            "generated label `{}` is shared by multiple variants",
-                            lit.value()
-                        ),
-                    ));
-                }
-            }
-        }
-        all_labels.extend(labels);
-        let ident = v.ident;
-        let pat = quote! { #(#lits)|* };
-        reverse_arms.push(quote! { #pat => ::core::result::Result::Ok(#name::#ident) });
-        eq_arms.push(quote! { Self::#ident => matches!(other, #(#lits)|*) });
-    }
-    all_labels.sort();
-    all_labels.dedup();
-
+    let (reverse_arms, eq_arms, all_labels) = reverse_eq_arms(name, &variants, &attr.styles)?;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let has_generics = !input.generics.params.is_empty();
 
-    let variants_const = if has_generics {
-        quote! {}
-    } else {
+    let variants_const = input.generics.params.is_empty().then(|| {
         quote! {
             /// All variants in declaration order.
             pub const VARIANTS: &'static [Self] = &[#(Self::#idents,)*];
@@ -494,9 +450,9 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             /// Default [`Self::label`] for each variant in declaration order.
             pub const LABELS: &'static [&'static str] = &[#(#default_labels,)*];
         }
-    };
+    });
 
-    let parse_impls = if cfg!(feature = "alloc") {
+    let parse_impls = cfg!(feature = "alloc").then(|| {
         quote! {
             impl #impl_generics #name #ty_generics #where_clause {
                 /// Parse any declared-case label, or a variant `rename`, into `Self`.
@@ -527,11 +483,9 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
                 }
             }
         }
-    } else {
-        quote! {}
-    };
+    });
 
-    let serde_impls = if cfg!(feature = "serde") {
+    let serde_impls = cfg!(feature = "serde").then(|| {
         quote! {
             impl #impl_generics #crate_path::__serde::Serialize for #name #ty_generics #where_clause {
                 fn serialize<S: #crate_path::__serde::Serializer>(
@@ -574,9 +528,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
                 }
             }
         }
-    } else {
-        quote! {}
-    };
+    });
 
     Ok(quote! {
         impl #impl_generics #name #ty_generics #where_clause {
@@ -588,9 +540,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             #[inline]
             #[must_use]
             pub const fn label(&self) -> &'static str {
-                match self {
-                    #(#label_arms,)*
-                }
+                match self { #(#label_arms,)* }
             }
 
             /// Alias of [`Self::label`].
@@ -620,9 +570,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         impl #impl_generics ::core::cmp::PartialEq<str> for #name #ty_generics #where_clause {
             #[inline]
             fn eq(&self, other: &str) -> bool {
-                match self {
-                    #(#eq_arms,)*
-                }
+                match self { #(#eq_arms,)* }
             }
         }
 
