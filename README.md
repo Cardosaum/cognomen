@@ -125,6 +125,13 @@ Idents split on ASCII camel-case boundaries. Acronyms stay together
 Rust **1.71.1**. Floor is the pinned `proc-macro2` (rustc 1.71+). Cognomen
 itself only needs `Option::is_some_and` (1.70).
 
+## Publishing
+
+`cognomen` depends on `cognomen-macros` by version. The first crates.io
+upload must publish `cognomen-macros` first, then `cognomen`. New crate
+names cannot use trusted publishing; that first upload is manual. Later
+releases are prepared and published by release-plz on `main`.
+
 ## License
 
 Dual-licensed under **MIT OR Apache-2.0**, see

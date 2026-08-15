@@ -1,0 +1,18 @@
+[workspace]
+repo_url = "https://github.com/Cardosaum/cognomen"
+pr_labels = ["release"]
+# Publish when the release PR is merged, not on every main commit.
+release_always = false
+
+[[package]]
+name = "cognomen"
+version_group = "cognomen"
+changelog_include = ["cognomen-macros"]
+changelog_path = "CHANGELOG.md"
+
+[[package]]
+name = "cognomen-macros"
+version_group = "cognomen"
+changelog_path = "macros/CHANGELOG.md"
+# cargo-semver-checks does not apply to proc-macro crates.
+semver_check = false
