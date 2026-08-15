@@ -1,7 +1,7 @@
 //! Proc-macro implementation for [`cognomen`](https://docs.rs/cognomen).
 //!
-//! Depend on the `cognomen` crate, not this one. This crate exists so the
-//! derive can live next to a `no_std` runtime (shared `FromLabelError`).
+//! Depend on the `cognomen` crate, not this one. This crate is the host
+//! proc-macro; generated items use `core` so the runtime can be `no_std`.
 
 mod cognomen;
 
@@ -41,7 +41,7 @@ use proc_macro::TokenStream;
 /// - `const fn {prefix}_{case}(&self) -> &'static str` for each declared case
 /// - `VARIANTS` / `LABELS` (non-generic enums)
 /// - `Display`, `AsRef<str>`, `PartialEq<str>`
-/// - `TryFrom<&str>`, `FromStr`, `from_label` (feature `alloc`)
+/// - `TryFrom<&str>`, `FromStr`, `from_label`
 /// - `Serialize` / `Deserialize` (feature `serde`)
 ///
 /// See the [`cognomen`](https://docs.rs/cognomen) crate docs for case styles,

@@ -452,38 +452,36 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         }
     });
 
-    let parse_impls = cfg!(feature = "alloc").then(|| {
-        quote! {
-            impl #impl_generics #name #ty_generics #where_clause {
-                /// Parse any declared-case label, or a variant `rename`, into `Self`.
-                ///
-                /// Equivalent to [`TryFrom::try_from`](core::convert::TryFrom).
-                #[inline]
-                pub fn from_label(s: &str) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
-                    ::core::convert::TryFrom::try_from(s)
-                }
+    let parse_impls = quote! {
+        impl #impl_generics #name #ty_generics #where_clause {
+            /// Parse any declared-case label, or a variant `rename`, into `Self`.
+            ///
+            /// Equivalent to [`TryFrom::try_from`](core::convert::TryFrom).
+            #[inline]
+            pub fn from_label(s: &str) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
+                ::core::convert::TryFrom::try_from(s)
             }
+        }
 
-            impl #impl_generics ::core::convert::TryFrom<&str> for #name #ty_generics #where_clause {
-                type Error = #crate_path::FromLabelError;
-                #[inline]
-                fn try_from(s: &str) -> ::core::result::Result<Self, Self::Error> {
-                    match s {
-                        #(#reverse_arms,)*
-                        _ => ::core::result::Result::Err(#crate_path::FromLabelError::new(s)),
-                    }
-                }
-            }
-
-            impl #impl_generics ::core::str::FromStr for #name #ty_generics #where_clause {
-                type Err = #crate_path::FromLabelError;
-                #[inline]
-                fn from_str(s: &str) -> ::core::result::Result<Self, Self::Err> {
-                    ::core::convert::TryFrom::try_from(s)
+        impl #impl_generics ::core::convert::TryFrom<&str> for #name #ty_generics #where_clause {
+            type Error = #crate_path::FromLabelError;
+            #[inline]
+            fn try_from(s: &str) -> ::core::result::Result<Self, Self::Error> {
+                match s {
+                    #(#reverse_arms,)*
+                    _ => ::core::result::Result::Err(#crate_path::FromLabelError::new(s)),
                 }
             }
         }
-    });
+
+        impl #impl_generics ::core::str::FromStr for #name #ty_generics #where_clause {
+            type Err = #crate_path::FromLabelError;
+            #[inline]
+            fn from_str(s: &str) -> ::core::result::Result<Self, Self::Err> {
+                ::core::convert::TryFrom::try_from(s)
+            }
+        }
+    };
 
     let serde_impls = cfg!(feature = "serde").then(|| {
         quote! {

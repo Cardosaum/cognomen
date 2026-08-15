@@ -21,8 +21,8 @@ resolver = "2"
 
 [features]
 default = ["std"]
-std = ["alloc", "cognomen-macros/std"]
-alloc = ["cognomen-macros/alloc"]
+std = ["alloc"]
+alloc = []
 serde = ["dep:serde", "cognomen-macros/serde"]
 
 [dependencies]

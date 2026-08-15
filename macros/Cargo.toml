@@ -15,9 +15,7 @@ include = ["src/**/*", "Cargo.toml"]
 proc-macro = true
 
 [features]
-default = ["std"]
-std = ["alloc"]
-alloc = []
+# Proc-macros run in rustc (always std). This only gates generated serde impls.
 serde = []
 
 [dependencies]

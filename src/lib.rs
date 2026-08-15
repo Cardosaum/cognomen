@@ -87,7 +87,7 @@
 //! - `label_snake()`, `label_kebab()`, ...
 //! - `E::VARIANTS: &'static [E]` and `E::LABELS: &'static [&'static str]`
 //! - `Display`, `AsRef<str>`, `PartialEq<str>` / `PartialEq<&str>`
-//! - `TryFrom<&str>`, `FromStr`, `E::from_label` (feature `alloc`)
+//! - `TryFrom<&str>`, `FromStr`, `E::from_label`
 //! - `Serialize` / `Deserialize` (feature `serde`): out is `label()`, in
 //!   accepts any declared case or `rename`
 //!
@@ -96,7 +96,7 @@
 //! | Feature | Default | Unlocks |
 //! |---------|---------|---------|
 //! | `std` | yes | `alloc` + [`std::error::Error`] for [`FromLabelError`] |
-//! | `alloc` | via `std` | parse (`TryFrom`, `FromStr`, `from_label`) |
+//! | `alloc` | via `std` | [`FromLabelError::input`] stores the unmatched string |
 //! | `serde` | no | `Serialize` / `Deserialize` |
 //!
 //! # `no_std`
@@ -105,9 +105,9 @@
 //! cognomen = { version = "0.1", default-features = false }
 //! ```
 //!
-//! Labels, `Display`, `AsRef`, and `VARIANTS` need no allocator. Add
-//! `features = ["alloc"]` to parse. Add `features = ["serde"]` for wire
-//! formats.
+//! Labels, parse, `Display`, `AsRef`, and `VARIANTS` use only `core`. Add
+//! `features = ["alloc"]` to keep the unmatched string on parse errors. Add
+//! `features = ["serde"]` for wire formats.
 //!
 //! # Word splitting
 //!
@@ -137,9 +137,9 @@ pub use cognomen_macros::Cognomen;
 
 /// Error returned when a string matches no declared label.
 ///
-/// Produced by [`TryFrom<&str>`](core::convert::TryFrom), [`core::str::FromStr`], and
-/// `E::from_label` (all require the `alloc` feature). With `std`, this
-/// implements [`std::error::Error`].
+/// Produced by [`TryFrom<&str>`](core::convert::TryFrom), [`core::str::FromStr`],
+/// and `E::from_label`. With `alloc`, the unmatched string is stored in
+/// [`Self::input`]. With `std`, this implements [`std::error::Error`].
 ///
 /// ```
 /// use cognomen::{Cognomen, FromLabelError};
@@ -151,7 +151,9 @@ pub use cognomen_macros::Cognomen;
 /// }
 ///
 /// let err = Mode::from_label("nope").unwrap_err();
+/// # #[cfg(feature = "alloc")]
 /// assert_eq!(err.input, "nope");
+/// # #[cfg(feature = "alloc")]
 /// assert!(err.to_string().contains("nope"));
 /// let _: FromLabelError = err;
 /// ```
@@ -164,12 +166,15 @@ pub struct FromLabelError {
 }
 
 impl FromLabelError {
-    /// Build an error that reports `input` as the unmatched string.
-    #[cfg(feature = "alloc")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+    /// Build an error for the unmatched `input` string.
+    ///
+    /// With `alloc`, that string is stored in [`Self::input`].
     #[must_use]
     pub fn new(input: &str) -> Self {
+        #[cfg(not(feature = "alloc"))]
+        let _ = input;
         Self {
+            #[cfg(feature = "alloc")]
             input: alloc::string::String::from(input),
         }
     }
@@ -225,15 +230,16 @@ mod tests {
         assert!("multi-process" == Mode::MultiProcess);
     }
 
-    #[cfg(feature = "alloc")]
     #[test]
     fn parse() {
         assert_eq!(
             Mode::from_label("single-process").unwrap(),
             Mode::SingleProcess
         );
-        assert_eq!(Mode::try_from("nope").unwrap_err().input, "nope");
+        assert!(Mode::try_from("nope").is_err());
         assert_eq!("multi_process".parse::<Mode>().unwrap(), Mode::MultiProcess);
+        #[cfg(feature = "alloc")]
+        assert_eq!(Mode::try_from("nope").unwrap_err().input, "nope");
     }
 
     #[cfg(feature = "serde")]

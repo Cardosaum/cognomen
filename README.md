@@ -92,7 +92,7 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 | `label_snake()`, `label_kebab()`, ... | one method per declared case |
 | `E::VARIANTS`, `E::LABELS` | declaration order |
 | `Display`, `AsRef<str>`, `PartialEq<str>` | compare against any declared label |
-| `TryFrom<&str>`, `FromStr`, `from_label` | feature `alloc` (on by default) |
+| `TryFrom<&str>`, `FromStr`, `from_label` | always; uses `core` |
 | `Serialize` / `Deserialize` | feature `serde`; out is `label()`, in accepts any declared case |
 
 ## Features
@@ -100,7 +100,7 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 | feature | default | unlocks |
 |---------|---------|---------|
 | `std` | yes | `alloc` + `std::error::Error` for `FromLabelError` |
-| `alloc` | via `std` | parse |
+| `alloc` | via `std` | `FromLabelError.input` stores the unmatched string |
 | `serde` | no | `Serialize` / `Deserialize` |
 
 `no_std`, including embedded:
@@ -109,9 +109,9 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 cognomen = { version = "0.1", default-features = false }
 ```
 
-Labels, `Display`, `AsRef`, and `VARIANTS` need no allocator. Add
-`features = ["alloc"]` to parse strings. Add `features = ["serde"]` for wire
-formats.
+Labels, parse, `Display`, `AsRef`, and `VARIANTS` use only `core`. Add
+`features = ["alloc"]` to keep the unmatched string on parse errors. Add
+`features = ["serde"]` for wire formats.
 
 ## Word splitting
 
