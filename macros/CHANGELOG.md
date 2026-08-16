@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/Cardosaum/cognomen/compare/cognomen-macros-v0.4.0...cognomen-macros-v0.4.1) - 2026-08-16
+
+### Other
+
+- Interpolate extras as Formatted trait methods ([#10](https://github.com/Cardosaum/cognomen/pull/10))
+
 ### Added
 
 - fielded variants and `{field}` interpolation in extras (Formatted)
