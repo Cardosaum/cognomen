@@ -1,0 +1,17 @@
+error[E0277]: the trait bound `Flag<1>: ArgType` is not satisfied
+  --> tests/ui/clap/fail_generic.rs:14:20
+   |
+14 |     needs_parser::<Flag<1>>();
+   |                    ^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `Variants` is not implemented for `Flag<1>`
+  --> tests/ui/clap/fail_generic.rs:6:1
+   |
+ 6 | enum Flag<const N: usize> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `Flag<1>` to implement `ArgType`
+note: required by a bound in `needs_parser`
+  --> tests/ui/clap/fail_generic.rs:11:20
+   |
+11 | fn needs_parser<T: ArgType>() {}
+   |                    ^^^^^^^ required by this bound in `needs_parser`

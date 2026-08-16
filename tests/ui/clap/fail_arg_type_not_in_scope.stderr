@@ -1,0 +1,20 @@
+error[E0599]: no variant, associated function, or constant named `value_parser` found for enum `Kind` in the current scope
+  --> tests/ui/clap/fail_arg_type_not_in_scope.rs:10:19
+   |
+ 5 | enum Kind {
+   | --------- variant, associated function, or constant `value_parser` not found for this enum
+...
+10 |     let _ = Kind::value_parser();
+   |                   ^^^^^^^^^^^^ variant, associated function, or constant not found in `Kind`
+   |
+note: if you're trying to build a new `Kind`, consider using `Kind::from_label` which returns `Result<Kind, FromLabelError>`
+  --> tests/ui/clap/fail_arg_type_not_in_scope.rs:3:45
+   |
+ 3 | #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+   |                                             ^^^^^^^^
+   = help: items from traits can only be used if the trait is in scope
+   = note: this error originates in the derive macro `Cognomen` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: trait `ArgType` which provides `value_parser` is implemented but not in scope; perhaps you want to import it
+   |
+ 1 + use cognomen::clap::ArgType;
+   |
