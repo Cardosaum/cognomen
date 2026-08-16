@@ -149,6 +149,7 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 | `AsRef<str>`, `PartialEq<str>` | compare against any declared label |
 | `TryFrom<&str>`, `FromStr`, `from_label` | always; uses `core` |
 | `Serialize` / `Deserialize` | feature `serde`; out is `label()`, in accepts any declared case |
+| `T::value_parser()` | feature `clap`; import `cognomen::clap::ArgType` in the binary |
 
 ## Features
 
@@ -157,6 +158,7 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 | `std` | yes | `alloc` + `std::error::Error` for `FromLabelError` |
 | `alloc` | via `std` | `FromLabelError.input` stores the unmatched string |
 | `serde` | no | `Serialize` / `Deserialize` |
+| `clap` | no | `T::value_parser()` for clap flags; implies `std` |
 
 `no_std`, including embedded:
 
@@ -166,7 +168,19 @@ cognomen = { version = "0.3", default-features = false }
 
 Labels, parse, `AsRef`, and `Variants` use only `core`. Add
 `features = ["alloc"]` to keep the unmatched string on parse errors. Add
-`features = ["serde"]` for wire formats.
+`features = ["serde"]` for wire formats. Enable `clap` in the binary that
+owns the CLI, not in a `no_std` kernel:
+
+```rust
+use clap::Parser;
+use cognomen::clap::ArgType;
+
+#[derive(Parser)]
+struct Cli {
+    #[arg(long, value_parser = Kind::value_parser())]
+    kind: Kind,
+}
+```
 
 ## Word splitting
 
@@ -177,8 +191,13 @@ Idents split on ASCII camel-case boundaries. Acronyms stay together
 
 ## MSRV
 
-Rust **1.71.1**. Floor is the pinned `proc-macro2` (rustc 1.71+). Cognomen
-itself only needs `Option::is_some_and` (1.70).
+Rust **1.71.1** for default features, `alloc`, and `serde`. Floor is the
+pinned `proc-macro2` (rustc 1.71+). Cognomen itself only needs
+`Option::is_some_and` (1.70).
+
+The `clap` feature is not part of that floor. It needs a rustc that can
+compile the resolved clap crate (clap 4.6 needs 1.85). CI checks `clap` on
+stable with `--all-features`.
 
 ## Publishing
 

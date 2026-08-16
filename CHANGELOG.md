@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `clap` feature: `T::value_parser()` after `use cognomen::clap::ArgType`, so a `no_std` enum crate does not depend on clap
+
 ## [0.3.0](https://github.com/Cardosaum/cognomen/releases/tag/cognomen-v0.3.0) - 2026-08-16
 
 ### Changed

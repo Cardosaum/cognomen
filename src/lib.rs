@@ -150,6 +150,8 @@
 //! - `TryFrom<&str>`, `FromStr`, `E::from_label`
 //! - `Serialize` / `Deserialize` (feature `serde`): out is `label()`, in
 //!   accepts any declared case or `rename`
+//! - [`clap::ArgType::value_parser`] (feature `clap`): clap flag parser in
+//!   the binary; the enum crate can stay `no_std`
 //!
 //! # Features
 //!
@@ -158,6 +160,7 @@
 //! | `std` | yes | `alloc` + [`std::error::Error`] for [`FromLabelError`] |
 //! | `alloc` | via `std` | [`FromLabelError::input`] stores the unmatched string |
 //! | `serde` | no | `Serialize` / `Deserialize` |
+//! | `clap` | no | [`clap::ArgType`] (`T::value_parser()`); implies `std` |
 //!
 //! # `no_std`
 //!
@@ -167,7 +170,8 @@
 //!
 //! Labels, parse, `AsRef`, and [`Variants`] use only `core`. Add
 //! `features = ["alloc"]` to keep the unmatched string on parse errors. Add
-//! `features = ["serde"]` for wire formats.
+//! `features = ["serde"]` for wire formats. Add `features = ["clap"]` in the
+//! binary that owns the clap surface, not in a `no_std` kernel.
 //!
 //! # Word splitting
 //!
@@ -178,7 +182,8 @@
 //!
 //! # MSRV
 //!
-//! Rust 1.71.1.
+//! Rust 1.71.1 for default features, `alloc`, and `serde`. The `clap`
+//! feature follows clap's rustc floor (4.6 needs 1.85).
 
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -193,6 +198,10 @@ extern crate std;
 
 #[doc(inline)]
 pub use cognomen_macros::Cognomen;
+
+#[cfg(feature = "clap")]
+#[cfg_attr(docsrs, doc(cfg(feature = "clap")))]
+pub mod clap;
 
 /// Declaration-order tables for a non-generic cognomen enum.
 ///
