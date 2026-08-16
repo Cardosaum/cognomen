@@ -54,5 +54,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.71.1
       - uses: Swatinem/rust-cache@v2
-      - run: cargo +1.71.1 check --workspace --all-features
-      - run: cargo +1.71.1 check --workspace --no-default-features
+      # rust-version covers the crate without `clap`. That feature is
+      # checked on stable via --all-features (clap 4.6 needs rustc 1.85).
+      - name: no_std
+        run: cargo +1.71.1 check --workspace --no-default-features
+      - name: alloc
+        run: cargo +1.71.1 check --workspace --no-default-features --features alloc
+      - name: default (std)
+        run: cargo +1.71.1 check --workspace
+      - name: serde
+        run: cargo +1.71.1 check --workspace --features serde

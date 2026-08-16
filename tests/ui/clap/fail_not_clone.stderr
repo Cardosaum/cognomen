@@ -1,0 +1,17 @@
+error[E0277]: the trait bound `Kind: ArgType` is not satisfied
+  --> tests/ui/clap/fail_not_clone.rs:13:20
+   |
+13 |     needs_parser::<Kind>();
+   |                    ^^^^ the trait `Clone` is not implemented for `Kind`
+   |
+   = note: required for `Kind` to implement `ArgType`
+note: required by a bound in `needs_parser`
+  --> tests/ui/clap/fail_not_clone.rs:10:20
+   |
+10 | fn needs_parser<T: ArgType>() {}
+   |                    ^^^^^^^ required by this bound in `needs_parser`
+help: consider annotating `Kind` with `#[derive(Clone)]`
+   |
+ 6 + #[derive(Clone)]
+ 7 | enum Kind {
+   |
