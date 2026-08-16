@@ -1,0 +1,5 @@
+error: duplicate cognomen rename
+ --> tests/ui/fail_duplicate_rename.rs:6:30
+  |
+6 |     #[cognomen(rename = "a", rename = "b")]
+  |                              ^^^^^^

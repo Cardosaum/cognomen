@@ -18,11 +18,12 @@ use proc_macro::TokenStream;
 /// ```
 ///
 /// - One or more case styles (required). The **first** is the default used by
-///   `label()`, `as_str()`, `Display`, and serde serialization.
+///   `label()`, `as_str()`, and serde serialization.
 /// - `prefix = "..."`: stem for per-case methods (`label_snake`, ...). Must be
 ///   a non-empty ASCII identifier. Default: `label`.
 /// - `crate = ::path`: crate path emitted in generated code. Default:
 ///   `::cognomen`. Set this when you re-export cognomen from another crate.
+///
 /// # Variant attribute
 ///
 /// ```ignore
@@ -50,7 +51,7 @@ use proc_macro::TokenStream;
 /// On the enum, `name = "..."` is the default for omitted variants.
 /// `name()` means `name = ""`. If the enum does not set a default, omitted
 /// variants use `as_str()` / `label()`. Extra methods are not used for
-/// parse, `Display`, or serde.
+/// parse or serde.
 ///
 /// # Generated items
 ///
@@ -58,8 +59,8 @@ use proc_macro::TokenStream;
 /// - `const fn as_str(&self) -> &'static str`
 /// - `const fn {prefix}_{case}(&self) -> &'static str` for each declared case
 /// - `const fn {name}(&self) -> &'static str` for each extra
-/// - `VARIANTS` / `LABELS` (non-generic enums)
-/// - `Display`, `AsRef<str>`, `PartialEq<str>`
+/// - `cognomen::Variants` (non-generic enums): `VARIANTS` / `LABELS`
+/// - `AsRef<str>`, `PartialEq<str>`
 /// - `TryFrom<&str>`, `FromStr`, `from_label`
 /// - `Serialize` / `Deserialize` (feature `serde`)
 ///

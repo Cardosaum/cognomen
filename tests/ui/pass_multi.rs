@@ -1,4 +1,4 @@
-use cognomen::Cognomen;
+use cognomen::{Cognomen, Variants};
 
 // Default = first listed (snake_case); kebab-case is the alternate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
@@ -50,7 +50,7 @@ fn main() {
 
     // Building-block aliases.
     assert_eq!(Transport::WebSocket.as_str(), "web_socket");
-    assert_eq!(Transport::WebSocket.to_string(), "web_socket");
+    assert_eq!(Transport::WebSocket.as_str(), "web_socket");
     assert_eq!(
         core::convert::AsRef::<str>::as_ref(&Transport::UnixSocket),
         "unix_socket"

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- emit `VARIANTS` / `LABELS` on `cognomen::Variants`, not as inherent items
+- do not implement `Display`
+
+### Fixed
+
+- `TryFrom` / `FromStr` now name `FromLabelError` instead of `Self::Error` / `Self::Err`, so variants named `Error` or `Err` compile
+
 ## [0.2.0](https://github.com/Cardosaum/cognomen/releases/tag/cognomen-macros-v0.2.0) - 2026-08-16
 
 ### Added

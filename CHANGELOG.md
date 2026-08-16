@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `VARIANTS` and `LABELS` live on the `Variants` trait, not as inherent items, so they cannot clash with another derive or user code
+- Cognomen no longer implements `Display`; print `e.label()` / `e.as_str()`
+
+### Fixed
+
+- `TryFrom` / `FromStr` now name `FromLabelError` instead of `Self::Error` / `Self::Err`, so variants named `Error` or `Err` compile
+- `Deserialize` now keeps the enum's generics, so `enum Flag<const N: usize>` compiles with `serde`
+
 ## [0.2.0](https://github.com/Cardosaum/cognomen/releases/tag/cognomen-v0.2.0) - 2026-08-16
 
 ### Added

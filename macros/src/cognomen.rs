@@ -629,13 +629,12 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     let (reverse_arms, eq_arms, all_labels) = reverse_eq_arms(name, &variants, &attr.styles)?;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let variants_const = input.generics.params.is_empty().then(|| {
+    let variants_impl = input.generics.params.is_empty().then(|| {
         quote! {
-            /// All variants in declaration order.
-            pub const VARIANTS: &'static [Self] = &[#(Self::#idents,)*];
-
-            /// Default [`Self::label`] for each variant in declaration order.
-            pub const LABELS: &'static [&'static str] = &[#(#default_labels,)*];
+            impl #crate_path::Variants for #name {
+                const VARIANTS: &'static [Self] = &[#(Self::#idents,)*];
+                const LABELS: &'static [&'static str] = &[#(#default_labels,)*];
+            }
         }
     });
 
@@ -653,7 +652,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         impl #impl_generics ::core::convert::TryFrom<&str> for #name #ty_generics #where_clause {
             type Error = #crate_path::FromLabelError;
             #[inline]
-            fn try_from(s: &str) -> ::core::result::Result<Self, Self::Error> {
+            fn try_from(s: &str) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
                 match s {
                     #(#reverse_arms,)*
                     _ => ::core::result::Result::Err(#crate_path::FromLabelError::new(s)),
@@ -664,9 +663,18 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         impl #impl_generics ::core::str::FromStr for #name #ty_generics #where_clause {
             type Err = #crate_path::FromLabelError;
             #[inline]
-            fn from_str(s: &str) -> ::core::result::Result<Self, Self::Err> {
+            fn from_str(s: &str) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
                 ::core::convert::TryFrom::try_from(s)
             }
+        }
+    };
+
+    let de_impl_generics = {
+        let params = &input.generics.params;
+        if params.is_empty() {
+            quote! { <'de> }
+        } else {
+            quote! { <'de, #params> }
         }
     };
 
@@ -681,12 +689,14 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
                 }
             }
 
-            impl<'de> #crate_path::__serde::Deserialize<'de> for #name #ty_generics #where_clause {
+            impl #de_impl_generics #crate_path::__serde::Deserialize<'de> for #name #ty_generics #where_clause {
                 fn deserialize<D: #crate_path::__serde::Deserializer<'de>>(
                     deserializer: D,
                 ) -> ::core::result::Result<Self, D::Error> {
-                    struct __CognomenVisitor;
-                    impl<'de> #crate_path::__serde::de::Visitor<'de> for __CognomenVisitor {
+                    struct __CognomenVisitor #impl_generics (
+                        ::core::marker::PhantomData<#name #ty_generics>
+                    ) #where_clause;
+                    impl #de_impl_generics #crate_path::__serde::de::Visitor<'de> for __CognomenVisitor #ty_generics #where_clause {
                         type Value = #name #ty_generics;
                         fn expecting(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                             f.write_str("a cognomen label")
@@ -709,7 +719,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
                             self.visit_str(v)
                         }
                     }
-                    deserializer.deserialize_str(__CognomenVisitor)
+                    deserializer.deserialize_str(__CognomenVisitor(::core::marker::PhantomData))
                 }
             }
         }
@@ -717,8 +727,6 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
 
     Ok(quote! {
         impl #impl_generics #name #ty_generics #where_clause {
-            #variants_const
-
             /// Stable label for this variant in the default (first) case.
             ///
             /// Overridden by `#[cognomen(rename = "...")]` on the variant.
@@ -740,12 +748,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             #(#extra_methods)*
         }
 
-        impl #impl_generics ::core::fmt::Display for #name #ty_generics #where_clause {
-            #[inline]
-            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                f.write_str(self.label())
-            }
-        }
+        #variants_impl
 
         impl #impl_generics ::core::convert::AsRef<str> for #name #ty_generics #where_clause {
             #[inline]
@@ -790,6 +793,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quote::{format_ident, quote};
 
     #[test]
     fn split_acronyms_and_singles() {
@@ -828,5 +832,444 @@ mod tests {
         assert!(!is_ascii_ident("my-label"));
         assert!(!is_ascii_ident("1abc"));
         assert!(!is_ascii_ident("a.b"));
+        assert!(!is_ascii_ident("caf\u{e9}"));
+    }
+
+    #[test]
+    fn style_aliases() {
+        let cases = [
+            ("snake_case", "snake_case"),
+            ("snake", "snake_case"),
+            ("kebab_case", "kebab-case"),
+            ("kebab-case", "kebab-case"),
+            ("kebab", "kebab-case"),
+            ("camelCase", "camelCase"),
+            ("camel_case", "camelCase"),
+            ("camel", "camelCase"),
+            ("PascalCase", "PascalCase"),
+            ("pascal_case", "PascalCase"),
+            ("pascal", "PascalCase"),
+            ("SCREAMING_SNAKE_CASE", "SCREAMING_SNAKE_CASE"),
+            ("screaming_snake_case", "SCREAMING_SNAKE_CASE"),
+            ("screaming", "SCREAMING_SNAKE_CASE"),
+            ("lower", "lower"),
+            ("lowercase", "lower"),
+            ("upper", "upper"),
+            ("uppercase", "upper"),
+            ("title", "title"),
+            ("title_case", "title"),
+            ("TitleCase", "title"),
+        ];
+        for (alias, name) in cases {
+            assert_eq!(
+                CaseStyle::from_str_style(alias).unwrap().name(),
+                name,
+                "{alias}"
+            );
+        }
+        assert!(CaseStyle::from_str_style("not_a_case").is_none());
+        assert!(CaseStyle::from_str_style("kebab-foo").is_none());
+    }
+
+    #[test]
+    fn split_more_idents() {
+        assert_eq!(
+            split_pascal_words("XMLHttpRequest"),
+            ["XML", "Http", "Request"]
+        );
+        assert_eq!(split_pascal_words("A1B2"), ["A1B2"]);
+        assert!(split_pascal_words("").is_empty());
+    }
+
+    fn err_msg(input: TokenStream) -> String {
+        derive(input)
+            .expect_err("expected derive to fail")
+            .to_string()
+    }
+
+    fn assert_err(input: TokenStream, needle: &str) {
+        let msg = err_msg(input);
+        assert!(
+            msg.contains(needle),
+            "expected {needle:?} in error, got {msg:?}"
+        );
+    }
+
+    fn ok(input: TokenStream) -> String {
+        derive(input)
+            .expect("expected derive to succeed")
+            .to_string()
+    }
+
+    #[test]
+    fn rejects_every_container_error() {
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                struct NotAnEnum { x: u8 }
+            },
+            "Cognomen can only be derived for enums",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                union NotAnEnum { x: u8 }
+            },
+            "Cognomen can only be derived for enums",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {}
+            },
+            "Cognomen enum must have at least one variant",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode { Unit, WithField(u8) }
+            },
+            "Cognomen only supports unit variants (no fields)",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode { Named { x: u8 } }
+            },
+            "Cognomen only supports unit variants (no fields)",
+        );
+        assert_err(
+            quote! { enum Mode { A } },
+            "missing #[cognomen(<case>)] container attribute",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                #[cognomen(lower)]
+                enum Mode { A }
+            },
+            "duplicate #[cognomen(...)] attribute",
+        );
+        assert_err(
+            quote! {
+                #[cognomen()]
+                enum Mode { A }
+            },
+            "missing cognomen case style",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(not_a_case)]
+                enum Mode { A }
+            },
+            "unknown cognomen case style",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(kebab-foo)]
+                enum Mode { A }
+            },
+            "unknown cognomen style `kebab-foo`",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, rename = "x")]
+                enum Mode { A }
+            },
+            "rename is only valid on a variant",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, snake)]
+                enum Mode { A }
+            },
+            "duplicate cognomen case style",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, prefix = "a", prefix = "b")]
+                enum Mode { A }
+            },
+            "duplicate cognomen prefix",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, crate = ::a, crate = ::b)]
+                enum Mode { A }
+            },
+            "duplicate cognomen crate",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, prefix = "my-label")]
+                enum Mode { A }
+            },
+            "prefix must be a non-empty ASCII identifier",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, prefix = "")]
+                enum Mode { A }
+            },
+            "prefix must be a non-empty ASCII identifier",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, prefix = "1abc")]
+                enum Mode { A }
+            },
+            "prefix must be a non-empty ASCII identifier",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, prefix())]
+                enum Mode { A }
+            },
+            "`prefix` is not an extra method",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, rename())]
+                enum Mode { A }
+            },
+            "`rename` is not an extra method",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, blurb = "", blurb = "")]
+                enum Mode { A }
+            },
+            "duplicate cognomen extra `blurb`",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, blurb("a", "b"))]
+                enum Mode { A }
+            },
+            "expected a single string literal",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, blurb(1))]
+                enum Mode { A }
+            },
+            "expected string literal",
+        );
+        let extra = Ident::new("caf\u{e9}", Span::call_site());
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, #extra = "x")]
+                enum Mode { A }
+            },
+            "extra method name must be a non-empty ASCII identifier",
+        );
+    }
+
+    #[test]
+    fn rejects_reserved_extras() {
+        for name in [
+            "label",
+            "as_str",
+            "from_label",
+            "VARIANTS",
+            "LABELS",
+            "eq",
+            "ne",
+            "fmt",
+            "as_ref",
+            "try_from",
+            "from_str",
+            "serialize",
+            "deserialize",
+            "label_snake",
+        ] {
+            let ident = format_ident!("{name}");
+            assert_err(
+                quote! {
+                    #[cognomen(snake_case, #ident = "")]
+                    enum Mode { A }
+                },
+                "conflicts with a generated cognomen item",
+            );
+        }
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, prefix = "cfg", cfg_snake = "")]
+                enum Mode { A }
+            },
+            "conflicts with a generated cognomen item",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(label = "x")]
+                    A,
+                }
+            },
+            "conflicts with a generated cognomen item",
+        );
+    }
+
+    #[test]
+    fn rejects_every_variant_error() {
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(rename = "")]
+                    A,
+                }
+            },
+            "cognomen rename must not be empty",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(rename = "a", rename = "b")]
+                    A,
+                }
+            },
+            "duplicate cognomen rename",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(blurb = "a", blurb = "b")]
+                    A,
+                }
+            },
+            "duplicate extra `blurb` on variant",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(blurb = "a")]
+                    #[cognomen(blurb = "a")]
+                    A,
+                }
+            },
+            "duplicate #[cognomen(...)] on variant",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen()]
+                    A,
+                }
+            },
+            "variant #[cognomen(...)] requires rename = \"...\" or an extra method",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(foo)]
+                    A,
+                }
+            },
+            "expected `key = \"...\"` or `key(\"...\")`",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(lower)]
+                enum Collide { Zero, zero }
+            },
+            "generated label `zero` is shared by multiple variants",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(lower)]
+                enum Collide {
+                    #[cognomen(rename = "zero")]
+                    Other,
+                    Zero,
+                }
+            },
+            "generated label `zero` is shared by multiple variants",
+        );
+    }
+
+    #[test]
+    fn accepts_forms() {
+        let basic = ok(quote! {
+            #[cognomen(snake_case, kebab-case)]
+            enum Mode { SingleProcess, MultiProcess }
+        });
+        assert!(basic.contains("FromLabelError"));
+        assert!(!basic.contains("Self :: Error"));
+        assert!(!basic.contains("Self :: Err"));
+        assert!(basic.contains("Variants"));
+        assert!(basic.contains("label_snake"));
+        assert!(basic.contains("label_kebab"));
+
+        ok(quote! {
+            #[cognomen(snake, kebab, camel, pascal, screaming, lowercase, uppercase, title_case)]
+            enum Mode { SingleProcess }
+        });
+        ok(quote! {
+            #[cognomen(snake_case, kebab-case, prefix = "cfg")]
+            enum Mode { A }
+        });
+        ok(quote! {
+            #[cognomen(snake_case)]
+            enum Mode {
+                #[cognomen(rename = "io_error")]
+                IoFailed,
+                OpenFailed,
+            }
+        });
+        ok(quote! {
+            #[cognomen(lower, blurb = "", hint = "n/a")]
+            enum Mode {
+                #[cognomen(blurb = "mic", hint = "in")]
+                Mic,
+                App,
+            }
+        });
+        ok(quote! {
+            #[cognomen(lower, blurb())]
+            enum Mode {
+                #[cognomen(blurb = "mic")]
+                Mic,
+                App,
+            }
+        });
+        ok(quote! {
+            #[cognomen(snake_case,)]
+            enum Mode {
+                #[cognomen(rename = "x",)]
+                A,
+            }
+        });
+        let via_crate = ok(quote! {
+            #[cognomen(lower, crate = ::other::cognomen)]
+            enum Mode { A }
+        });
+        assert!(via_crate.contains("other"));
+
+        let generic = ok(quote! {
+            #[cognomen(snake_case)]
+            enum Flag<const N: usize> { LeftHand, RightHand }
+        });
+        assert!(!generic.contains("Variants"));
+        #[cfg(feature = "serde")]
+        {
+            assert!(generic.contains("const N"));
+            assert!(generic.contains("Serialize"));
+            assert!(generic.contains("Deserialize"));
+        }
+
+        let status = ok(quote! {
+            #[cognomen(lower)]
+            enum Status { Error, Err, Ok }
+        });
+        assert!(status.contains("FromLabelError"));
+        assert!(!status.contains("Result < Self , Self :: Error >"));
+        assert!(!status.contains("type Err = Self :: Err"));
     }
 }

@@ -1,0 +1,5 @@
+error: unknown cognomen style `kebab-foo`
+ --> tests/ui/fail_unknown_kebab.rs:4:12
+  |
+4 | #[cognomen(kebab-foo)]
+  |            ^^^^^

@@ -10,7 +10,7 @@
 //! # Quick start
 //!
 //! ```
-//! use cognomen::Cognomen;
+//! use cognomen::{Cognomen, Variants};
 //!
 //! #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 //! #[cognomen(snake_case, kebab-case)]
@@ -29,7 +29,7 @@
 //! ```
 //!
 //! The first case in `#[cognomen(...)]` is the default (`label()` / `as_str()` /
-//! `Display` / serde out). Every listed case also gets `{prefix}_{case}`.
+//! serde out). Every listed case also gets `{prefix}_{case}`.
 //!
 //! # Case styles
 //!
@@ -79,7 +79,9 @@
 //! Any other `name = "..."` is an [extra method](#extra-methods).
 //!
 //! Violations (non-enum, fields, missing case, collisions, bad prefix, bad
-//! extra) are compile errors.
+//! extra) are compile errors. Variants named `Error` or `Err` are fine:
+//! generated `TryFrom` / `FromStr` name [`FromLabelError`] instead of
+//! `Self::Error` / `Self::Err`.
 //!
 //! # Extra methods
 //!
@@ -128,9 +130,9 @@
 //! assert_eq!(SourceKind::App.hint(), "n/a");
 //! ```
 //!
-//! Several extras can coexist. They are not accepted by `from_label`,
-//! `Display`, or serde. Names that collide with generated items (`label`,
-//! `as_str`, `{prefix}_{case}`, ...) are compile errors.
+//! Several extras can coexist. They are not accepted by `from_label` or
+//! serde. Names that collide with generated items (`label`, `as_str`,
+//! `{prefix}_{case}`, ...) are compile errors.
 //!
 //! # Generated API
 //!
@@ -140,8 +142,11 @@
 //! - `label_snake()`, `label_kebab()`, ...
 //! - `{name}()` for each extra (`blurb()`, `hint()`, ...); omitted variants
 //!   use `as_str()` unless the enum sets a default
-//! - `E::VARIANTS: &'static [E]` and `E::LABELS: &'static [&'static str]`
-//! - `Display`, `AsRef<str>`, `PartialEq<str>` / `PartialEq<&str>`
+//! - [`Variants`] (non-generic enums): `E::VARIANTS` and `E::LABELS` after
+//!   `use cognomen::Variants`. These are trait items, so they cannot clash
+//!   with another derive or a user `const VARIANTS`.
+//! - No `Display` impl. Print the label with `e.label()` / `e.as_str()`.
+//! - `AsRef<str>`, `PartialEq<str>` / `PartialEq<&str>`
 //! - `TryFrom<&str>`, `FromStr`, `E::from_label`
 //! - `Serialize` / `Deserialize` (feature `serde`): out is `label()`, in
 //!   accepts any declared case or `rename`
@@ -160,7 +165,7 @@
 //! cognomen = { version = "0.1", default-features = false }
 //! ```
 //!
-//! Labels, parse, `Display`, `AsRef`, and `VARIANTS` use only `core`. Add
+//! Labels, parse, `AsRef`, and [`Variants`] use only `core`. Add
 //! `features = ["alloc"]` to keep the unmatched string on parse errors. Add
 //! `features = ["serde"]` for wire formats.
 //!
@@ -188,6 +193,34 @@ extern crate std;
 
 #[doc(inline)]
 pub use cognomen_macros::Cognomen;
+
+/// Declaration-order tables for a non-generic cognomen enum.
+///
+/// `VARIANTS` and `LABELS` live on this trait, not as inherent items on
+/// `E`. Another derive, or a user `const VARIANTS`, cannot clash with them.
+/// Import the trait to use `E::VARIANTS`, or spell the path:
+/// `<E as cognomen::Variants>::VARIANTS`.
+///
+/// ```
+/// use cognomen::{Cognomen, Variants};
+///
+/// #[derive(Debug, Clone, Copy, PartialEq, Cognomen)]
+/// #[cognomen(lower)]
+/// enum Kind {
+///     Mic,
+///     App,
+/// }
+///
+/// assert_eq!(Kind::VARIANTS, &[Kind::Mic, Kind::App]);
+/// assert_eq!(Kind::LABELS, &["mic", "app"]);
+/// ```
+pub trait Variants: Sized + 'static {
+    /// All variants in declaration order.
+    const VARIANTS: &'static [Self];
+
+    /// Default label for each variant in declaration order.
+    const LABELS: &'static [&'static str];
+}
 
 /// Error returned when a string matches no declared label.
 ///
@@ -259,6 +292,8 @@ pub use serde as __serde;
 mod tests {
     extern crate std;
 
+    use std::string::ToString;
+
     use super::*;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
@@ -284,6 +319,47 @@ mod tests {
         #[cognomen(blurb = "microphone / input device")]
         Mic,
         App,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(lower)]
+    enum Shared {
+        Mic,
+        App,
+    }
+
+    impl core::fmt::Display for Shared {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.write_str("user")
+        }
+    }
+
+    impl Shared {
+        pub const VARIANTS: &'static [&'static str] = &["mic", "app"];
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(lower)]
+    enum Status {
+        Error,
+        Err,
+        Ok,
+    }
+
+    #[test]
+    fn error_and_err_variants() {
+        assert_eq!(Status::Error.as_str(), "error");
+        assert_eq!(Status::try_from("err"), Ok(Status::Err));
+        assert_eq!("ok".parse::<Status>().unwrap(), Status::Ok);
+    }
+
+    #[test]
+    fn tables_do_not_clash_with_user_items() {
+        assert_eq!(Shared::VARIANTS, &["mic", "app"]);
+        assert_eq!(<Shared as Variants>::VARIANTS, &[Shared::Mic, Shared::App]);
+        assert_eq!(<Shared as Variants>::LABELS, &["mic", "app"]);
+        assert_eq!(Shared::Mic.to_string(), "user");
+        assert_eq!(Shared::Mic.as_str(), "mic");
     }
 
     #[test]
@@ -329,6 +405,169 @@ mod tests {
         assert_eq!(Mode::try_from("nope").unwrap_err().input, "nope");
     }
 
+    const fn mode_label_in_const() -> &'static str {
+        Mode::SingleProcess.label()
+    }
+
+    #[test]
+    fn works_in_const() {
+        assert_eq!(mode_label_in_const(), "single_process");
+        const TABLES: &[&str] = Mode::LABELS;
+        assert_eq!(TABLES, &["single_process", "multi_process"]);
+    }
+
+    #[test]
+    fn from_label_error_new() {
+        let err = FromLabelError::new("nope");
+        #[cfg(feature = "alloc")]
+        {
+            assert_eq!(err.input, "nope");
+            assert_eq!(err.to_string(), "no cognomen label matches `nope`");
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            assert_eq!(err.to_string(), "no cognomen label matches");
+        }
+        #[cfg(feature = "std")]
+        {
+            let _: &dyn std::error::Error = &err;
+        }
+    }
+
+    #[test]
+    fn partial_eq_mismatch() {
+        assert!(Mode::SingleProcess != "nope");
+        assert!("nope" != Mode::SingleProcess);
+        assert!(Mode::MultiProcess != "single_process");
+        assert!(Mode::SingleProcess == "single-process");
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum Acronym {
+        HTTPResponse,
+        Utf8,
+        IPv4,
+    }
+
+    #[test]
+    fn word_splitting() {
+        assert_eq!(Acronym::HTTPResponse.as_str(), "http_response");
+        assert_eq!(Acronym::Utf8.as_str(), "utf8");
+        assert_eq!(Acronym::IPv4.as_str(), "i_pv4");
+        assert_eq!(
+            Acronym::from_label("http_response").unwrap(),
+            Acronym::HTTPResponse
+        );
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(lower, blurb())]
+    enum ParenExtra {
+        #[cognomen(blurb = "mic")]
+        Mic,
+        App,
+    }
+
+    #[test]
+    fn extra_paren_default_is_empty() {
+        assert_eq!(ParenExtra::Mic.blurb(), "mic");
+        assert_eq!(ParenExtra::App.blurb(), "");
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum Generic<const N: usize> {
+        LeftHand,
+        RightHand,
+    }
+
+    #[test]
+    fn generic_has_labels_not_tables() {
+        assert_eq!(Generic::<1>::LeftHand.as_str(), "left_hand");
+        assert_eq!(
+            Generic::<2>::from_label("right_hand").unwrap(),
+            Generic::<2>::RightHand
+        );
+    }
+
+    impl Shared {
+        pub const LABELS: &'static [&'static str] = &["user-mic", "user-app"];
+    }
+
+    #[test]
+    fn user_labels_do_not_hide_trait_labels() {
+        assert_eq!(Shared::LABELS, &["user-mic", "user-app"]);
+        assert_eq!(<Shared as Variants>::LABELS, &["mic", "app"]);
+    }
+
+    #[test]
+    fn error_and_err_parse() {
+        assert_eq!(Status::from_label("error").unwrap(), Status::Error);
+        assert_eq!(Status::from_label("err").unwrap(), Status::Err);
+        assert!(Status::from_label("ok").is_ok());
+        assert!(Status::try_from("Error").is_err());
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(
+        snake, kebab, camel_case, pascal, screaming, lowercase, uppercase, title_case
+    )]
+    enum Alias {
+        SingleProcess,
+    }
+
+    #[test]
+    fn case_aliases() {
+        assert_eq!(Alias::SingleProcess.label(), "single_process");
+        assert_eq!(Alias::SingleProcess.label_snake(), "single_process");
+        assert_eq!(Alias::SingleProcess.label_kebab(), "single-process");
+        assert_eq!(Alias::SingleProcess.label_camel(), "singleProcess");
+        assert_eq!(Alias::SingleProcess.label_pascal(), "SingleProcess");
+        assert_eq!(
+            Alias::SingleProcess.label_screaming_snake(),
+            "SINGLE_PROCESS"
+        );
+        assert_eq!(Alias::SingleProcess.label_lower(), "singleprocess");
+        assert_eq!(Alias::SingleProcess.label_upper(), "SINGLEPROCESS");
+        assert_eq!(Alias::SingleProcess.label_title(), "Single Process");
+        assert_eq!(
+            Alias::from_label("single-process").unwrap(),
+            Alias::SingleProcess
+        );
+        assert_eq!(
+            Alias::from_label("SINGLE_PROCESS").unwrap(),
+            Alias::SingleProcess
+        );
+        assert_eq!(
+            Alias::from_label("Single Process").unwrap(),
+            Alias::SingleProcess
+        );
+        assert!("singleProcess" == Alias::SingleProcess);
+        assert!(Alias::SingleProcess == *"single_process");
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case, kebab-case, prefix = "cfg")]
+    enum Prefixed {
+        EnableLogging,
+    }
+
+    #[test]
+    fn prefix_and_as_ref() {
+        assert_eq!(Prefixed::EnableLogging.label(), "enable_logging");
+        assert_eq!(Prefixed::EnableLogging.cfg_snake(), "enable_logging");
+        assert_eq!(Prefixed::EnableLogging.cfg_kebab(), "enable-logging");
+        assert_eq!(
+            core::convert::AsRef::<str>::as_ref(&Prefixed::EnableLogging),
+            "enable_logging"
+        );
+        assert_eq!(
+            "enable-logging".parse::<Prefixed>().unwrap(),
+            Prefixed::EnableLogging
+        );
+    }
+
     #[cfg(feature = "serde")]
     #[test]
     fn serde_roundtrip() {
@@ -339,5 +578,10 @@ mod tests {
         assert_eq!(back, v);
         let kebab: Mode = serde_json::from_str("\"single-process\"").unwrap();
         assert_eq!(kebab, v);
+        let generic = Generic::<3>::LeftHand;
+        let gs = serde_json::to_string(&generic).unwrap();
+        assert_eq!(gs, "\"left_hand\"");
+        let gback: Generic<3> = serde_json::from_str(&gs).unwrap();
+        assert_eq!(gback, generic);
     }
 }

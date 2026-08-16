@@ -1,0 +1,5 @@
+error: extra method `VARIANTS` conflicts with a generated cognomen item
+ --> tests/ui/fail_reserved_variants.rs:4:24
+  |
+4 | #[cognomen(snake_case, VARIANTS = "x")]
+  |                        ^^^^^^^^
