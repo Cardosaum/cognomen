@@ -1,6 +1,6 @@
 [package]
 name = "cognomen"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Matheus Cardoso"]
 edition = "2021"
 rust-version = "1.71.1"
@@ -32,7 +32,7 @@ alloc = []
 serde = ["dep:serde", "cognomen-macros/serde"]
 
 [dependencies]
-cognomen-macros = { path = "macros", version = "0.2.0", default-features = false }
+cognomen-macros = { path = "macros", version = "0.3.0", default-features = false }
 serde = { version = "1", optional = true, default-features = false }
 
 [dev-dependencies]
