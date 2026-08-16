@@ -59,7 +59,6 @@ The first case in `#[cognomen(...)]` is the default (`label()` / `as_str()` /
 - `prefix = "cfg"`: accessors become `cfg_snake`, `cfg_kebab`, ...
   (non-empty ASCII identifier; default `label`).
 - `crate = ::other::cognomen`: generated path when you re-export this crate.
-
 **Variant** (optional): `#[cognomen(rename = "io_error")]`
 
 Sets the default label to that exact string and accepts it when parsing.
@@ -79,8 +78,61 @@ assert_eq!(Wire::IoFailed.label_snake(), "io_failed");
 assert_eq!(Wire::from_label("io_error").unwrap(), Wire::IoFailed);
 ```
 
-Violations (non-enum, fields, missing case, collisions, bad prefix) are
-compile errors, pinned by trybuild tests under `tests/ui/`.
+Any other `name = "..."` is an [extra method](#extra-methods).
+
+Violations (non-enum, fields, missing case, collisions, bad prefix, bad extra)
+are compile errors, pinned by trybuild tests under `tests/ui/`.
+
+## Extra methods
+
+Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
+`rename` becomes `const fn name(&self) -> &'static str`.
+
+On a variant, that string is the variant's value. On the enum, that string
+is the default for variants that omit the key. If the enum does not set a
+default, omitted variants use `as_str()` / `label()` (including `rename`).
+`name()` on the enum is the same as `name = ""`.
+
+```rust
+use cognomen::Cognomen;
+
+#[derive(Cognomen)]
+#[cognomen(lower)]
+enum SourceKind {
+    #[cognomen(blurb = "microphone / input device")]
+    Mic,
+    #[cognomen(blurb = "system-wide loopback")]
+    System,
+    App,
+}
+
+assert_eq!(SourceKind::Mic.as_str(), "mic");
+assert_eq!(SourceKind::Mic.blurb(), "microphone / input device");
+assert_eq!(SourceKind::App.blurb(), "app");
+```
+
+An enum-level default overrides `as_str()` for omitted variants:
+
+```rust
+use cognomen::Cognomen;
+
+#[derive(Cognomen)]
+#[cognomen(lower, blurb = "", hint = "n/a")]
+enum SourceKind {
+    #[cognomen(blurb = "microphone / input device", hint = "CoreAudio input")]
+    Mic,
+    App,
+}
+
+assert_eq!(SourceKind::Mic.blurb(), "microphone / input device");
+assert_eq!(SourceKind::App.blurb(), "");
+assert_eq!(SourceKind::Mic.hint(), "CoreAudio input");
+assert_eq!(SourceKind::App.hint(), "n/a");
+```
+
+Several extras can coexist. They are not accepted by `from_label`,
+`Display`, or serde. Names that collide with generated items (`label`,
+`as_str`, `{prefix}_{case}`, ...) are compile errors.
 
 ## Generated API
 
@@ -90,6 +142,7 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 |------|--------|
 | `label()` / `as_str()` | default case, or `rename` |
 | `label_snake()`, `label_kebab()`, ... | one method per declared case |
+| `{name}()` | each extra; `as_str()` if omitted, unless the enum sets a default |
 | `E::VARIANTS`, `E::LABELS` | declaration order |
 | `Display`, `AsRef<str>`, `PartialEq<str>` | compare against any declared label |
 | `TryFrom<&str>`, `FromStr`, `from_label` | always; uses `core` |

@@ -1,4 +1,4 @@
-error: unknown cognomen key `rename`
+error: rename is only valid on a variant (e.g. #[cognomen(rename = "io_error")])
  --> tests/ui/fail_unknown_key.rs:4:24
   |
 4 | #[cognomen(snake_case, rename = "x")]

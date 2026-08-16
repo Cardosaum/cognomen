@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/Cardosaum/cognomen/releases/tag/cognomen-macros-v0.2.0) - 2026-08-16
+
+### Added
+
+- extra string methods from `#[cognomen(name = "...")]`; omitted variants use `as_str()` unless the enum sets a default
+
 ## [0.1.0](https://github.com/Cardosaum/cognomen/releases/tag/cognomen-macros-v0.1.0) - 2026-08-15
 
 ### Added

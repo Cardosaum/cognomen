@@ -5,7 +5,7 @@ use quote::{format_ident, quote};
 use std::collections::BTreeMap;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{Attribute, Data, DeriveInput, Fields, Ident, Result, Token};
+use syn::{parenthesized, Attribute, Data, DeriveInput, Fields, Ident, Result, Token};
 
 const STYLE_HELP: &str = "snake_case|snake|kebab_case|kebab-case|kebab|camelCase|camel|PascalCase|pascal|SCREAMING_SNAKE_CASE|screaming|lower|upper|title|title_case";
 
@@ -88,10 +88,19 @@ impl CaseStyle {
 /// `#[cognomen(snake_case)]` or `#[cognomen(snake_case, kebab-case, prefix = "...")]`.
 ///
 /// First case listed is the default returned by `label()`.
+/// Extra methods: any `name = "..."` (or `name()`) besides reserved keys.
 struct CognomenAttr {
     styles: Vec<CaseStyle>,
     prefix: String,
     crate_path: syn::Path,
+    extras: Vec<(String, ExtraDecl)>,
+}
+
+struct ExtraDecl {
+    /// `Some` when the enum sets `name = "..."` / `name()`; `None` falls back
+    /// to each variant's default label (`as_str` / `label`).
+    default: Option<String>,
+    span: Span,
 }
 
 fn parse_case_style(input: ParseStream<'_>) -> Result<(CaseStyle, Span)> {
@@ -122,6 +131,98 @@ fn parse_eq_litstr(input: ParseStream<'_>) -> Result<(Ident, syn::LitStr)> {
     Ok((key, input.parse()?))
 }
 
+fn parse_key_litstr(input: ParseStream<'_>) -> Result<(Ident, syn::LitStr)> {
+    let key: Ident = input.parse()?;
+    if input.peek(Token![=]) {
+        input.parse::<Token![=]>()?;
+        return Ok((key, input.parse()?));
+    }
+    if input.peek(syn::token::Paren) {
+        let content;
+        parenthesized!(content in input);
+        let value: syn::LitStr = content.parse()?;
+        if !content.is_empty() {
+            return Err(content.error("expected a single string literal"));
+        }
+        return Ok((key, value));
+    }
+    Err(syn::Error::new(
+        key.span(),
+        "expected `key = \"...\"` or `key(\"...\")`",
+    ))
+}
+
+fn insert_extra(extras: &mut Vec<(String, ExtraDecl)>, key: Ident, default: String) -> Result<()> {
+    let name = key.to_string();
+    if name == "prefix" || name == "rename" {
+        return Err(syn::Error::new(
+            key.span(),
+            format!("`{name}` is not an extra method"),
+        ));
+    }
+    if !is_ascii_ident(&name) {
+        return Err(syn::Error::new(
+            key.span(),
+            "extra method name must be a non-empty ASCII identifier",
+        ));
+    }
+    if extras.iter().any(|(n, _)| n == &name) {
+        return Err(syn::Error::new(
+            key.span(),
+            format!("duplicate cognomen extra `{name}`"),
+        ));
+    }
+    extras.push((
+        name,
+        ExtraDecl {
+            default: Some(default),
+            span: key.span(),
+        },
+    ));
+    Ok(())
+}
+
+fn reserved_idents(prefix: &str, styles: &[CaseStyle]) -> Vec<String> {
+    let mut out = vec![
+        String::from("label"),
+        String::from("as_str"),
+        String::from("from_label"),
+        String::from("VARIANTS"),
+        String::from("LABELS"),
+        String::from("eq"),
+        String::from("ne"),
+        String::from("fmt"),
+        String::from("as_ref"),
+        String::from("try_from"),
+        String::from("from_str"),
+        String::from("serialize"),
+        String::from("deserialize"),
+    ];
+    for style in styles {
+        out.push(format!("{}_{}", prefix, style.suffix()));
+    }
+    out
+}
+
+fn check_extras(prefix: &str, styles: &[CaseStyle], extras: &[(String, ExtraDecl)]) -> Result<()> {
+    let reserved = reserved_idents(prefix, styles);
+    for (name, decl) in extras {
+        if syn::parse_str::<Ident>(name).is_err() {
+            return Err(syn::Error::new(
+                decl.span,
+                format!("extra method `{name}` is not a valid Rust identifier"),
+            ));
+        }
+        if reserved.iter().any(|r| r == name) {
+            return Err(syn::Error::new(
+                decl.span,
+                format!("extra method `{name}` conflicts with a generated cognomen item"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn set_once<T>(slot: &mut Option<T>, value: T, span: Span, msg: &str) -> Result<()> {
     if slot.is_some() {
         return Err(syn::Error::new(span, msg));
@@ -142,6 +243,7 @@ impl Parse for CognomenAttr {
         let mut styles = Vec::new();
         let mut prefix = None;
         let mut crate_path = None;
+        let mut extras = Vec::new();
 
         while !input.is_empty() {
             if input.peek(Token![crate]) && input.peek2(Token![=]) {
@@ -153,26 +255,43 @@ impl Parse for CognomenAttr {
                     crate_tok.span,
                     "duplicate cognomen crate",
                 )?;
+            } else if input.peek(syn::Ident) && input.peek2(syn::token::Paren) {
+                let key: Ident = input.parse()?;
+                let content;
+                parenthesized!(content in input);
+                let default = if content.is_empty() {
+                    String::new()
+                } else {
+                    let value: syn::LitStr = content.parse()?;
+                    if !content.is_empty() {
+                        return Err(content.error("expected a single string literal"));
+                    }
+                    value.value()
+                };
+                insert_extra(&mut extras, key, default)?;
             } else if input.peek(syn::Ident) && input.peek2(Token![=]) {
                 let (key, value) = parse_eq_litstr(input)?;
-                if key != "prefix" {
+                if key == "prefix" {
+                    let text = value.value();
+                    set_once(
+                        &mut prefix,
+                        text.clone(),
+                        key.span(),
+                        "duplicate cognomen prefix",
+                    )?;
+                    if !is_ascii_ident(&text) {
+                        return Err(syn::Error::new(
+                            value.span(),
+                            "prefix must be a non-empty ASCII identifier (e.g. prefix = \"label\")",
+                        ));
+                    }
+                } else if key == "rename" {
                     return Err(syn::Error::new(
                         key.span(),
-                        format!("unknown cognomen key `{key}`"),
+                        "rename is only valid on a variant (e.g. #[cognomen(rename = \"io_error\")])",
                     ));
-                }
-                let text = value.value();
-                set_once(
-                    &mut prefix,
-                    text.clone(),
-                    key.span(),
-                    "duplicate cognomen prefix",
-                )?;
-                if !is_ascii_ident(&text) {
-                    return Err(syn::Error::new(
-                        value.span(),
-                        "prefix must be a non-empty ASCII identifier (e.g. prefix = \"label\")",
-                    ));
+                } else {
+                    insert_extra(&mut extras, key, value.value())?;
                 }
             } else {
                 let (style, span) = parse_case_style(input)?;
@@ -195,41 +314,50 @@ impl Parse for CognomenAttr {
             styles,
             prefix: prefix.unwrap_or_else(|| String::from("label")),
             crate_path: crate_path.unwrap_or_else(|| syn::parse_quote!(::cognomen)),
+            extras,
         })
     }
 }
 
 struct VariantAttr {
     rename: Option<syn::LitStr>,
+    extras: Vec<(String, syn::LitStr)>,
 }
 
 impl Parse for VariantAttr {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let mut rename = None;
+        let mut extras = Vec::new();
         while !input.is_empty() {
-            let (key, value) = parse_eq_litstr(input)?;
-            if key != "rename" {
-                return Err(syn::Error::new(
-                    key.span(),
-                    format!("unknown cognomen variant key `{key}`"),
-                ));
+            let (key, value) = parse_key_litstr(input)?;
+            if key == "rename" {
+                if value.value().is_empty() {
+                    return Err(syn::Error::new(
+                        value.span(),
+                        "cognomen rename must not be empty",
+                    ));
+                }
+                set_once(&mut rename, value, key.span(), "duplicate cognomen rename")?;
+            } else {
+                let name = key.to_string();
+                if extras.iter().any(|(n, _)| n == &name) {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("duplicate extra `{name}` on variant"),
+                    ));
+                }
+                extras.push((name, value));
             }
-            if value.value().is_empty() {
-                return Err(syn::Error::new(
-                    value.span(),
-                    "cognomen rename must not be empty",
-                ));
-            }
-            set_once(&mut rename, value, key.span(), "duplicate cognomen rename")?;
             eat_comma(input)?;
         }
-        Ok(Self { rename })
+        Ok(Self { rename, extras })
     }
 }
 
 struct Variant<'a> {
     ident: &'a Ident,
     rename: Option<String>,
+    extras: BTreeMap<String, String>,
 }
 
 impl Variant<'_> {
@@ -312,22 +440,55 @@ fn find_cognomen_attr<'a>(
     Ok(found)
 }
 
-fn parse_variant_rename(variant: &syn::Variant) -> Result<Option<String>> {
-    let Some(attr) = find_cognomen_attr(&variant.attrs, "duplicate #[cognomen(...)] on variant")?
-    else {
-        return Ok(None);
-    };
-    let parsed: VariantAttr = attr.parse_args()?;
-    let Some(rename) = parsed.rename else {
-        return Err(syn::Error::new(
-            attr.span(),
-            "variant #[cognomen(...)] requires rename = \"...\"",
-        ));
-    };
-    Ok(Some(rename.value()))
+fn ensure_extra(extras: &mut Vec<(String, ExtraDecl)>, name: String, span: Span) {
+    if extras.iter().any(|(n, _)| n == &name) {
+        return;
+    }
+    extras.push((
+        name,
+        ExtraDecl {
+            default: None,
+            span,
+        },
+    ));
 }
 
-fn unit_variants(input: &DeriveInput) -> Result<Vec<Variant<'_>>> {
+fn parse_variant_meta(
+    variant: &syn::Variant,
+    declared: &mut Vec<(String, ExtraDecl)>,
+) -> Result<(Option<String>, BTreeMap<String, String>)> {
+    let mut extras = BTreeMap::new();
+    let mut rename = None;
+
+    if let Some(attr) = find_cognomen_attr(&variant.attrs, "duplicate #[cognomen(...)] on variant")?
+    {
+        let parsed: VariantAttr = attr.parse_args()?;
+        if parsed.rename.is_none() && parsed.extras.is_empty() {
+            return Err(syn::Error::new(
+                attr.span(),
+                "variant #[cognomen(...)] requires rename = \"...\" or an extra method",
+            ));
+        }
+        rename = parsed.rename.map(|l| l.value());
+        for (name, lit) in parsed.extras {
+            if extras.contains_key(&name) {
+                return Err(syn::Error::new(
+                    lit.span(),
+                    format!("duplicate extra `{name}` on variant"),
+                ));
+            }
+            ensure_extra(declared, name.clone(), lit.span());
+            extras.insert(name, lit.value());
+        }
+    }
+
+    Ok((rename, extras))
+}
+
+fn unit_variants<'a>(
+    input: &'a DeriveInput,
+    declared: &mut Vec<(String, ExtraDecl)>,
+) -> Result<Vec<Variant<'a>>> {
     let Data::Enum(data) = &input.data else {
         return Err(syn::Error::new(
             input.ident.span(),
@@ -343,9 +504,11 @@ fn unit_variants(input: &DeriveInput) -> Result<Vec<Variant<'_>>> {
                 "Cognomen only supports unit variants (no fields)",
             ));
         }
+        let (rename, extras) = parse_variant_meta(variant, declared)?;
         variants.push(Variant {
             ident: &variant.ident,
-            rename: parse_variant_rename(variant)?,
+            rename,
+            extras,
         });
     }
     if variants.is_empty() {
@@ -404,7 +567,9 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         }
     };
 
-    let variants = unit_variants(&input)?;
+    let mut extras = attr.extras;
+    let variants = unit_variants(&input, &mut extras)?;
+    check_extras(&attr.prefix, &attr.styles, &extras)?;
     let crate_path = &attr.crate_path;
     let default = attr.styles[0];
     let idents: Vec<&Ident> = variants.iter().map(|v| v.ident).collect();
@@ -420,6 +585,28 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             let ident = v.ident;
             let label = v.case_label(*style);
             quote! { Self::#ident => #label }
+        });
+        quote! {
+            #[doc = #doc]
+            #[inline]
+            #[must_use]
+            pub const fn #method(&self) -> &'static str {
+                match self { #(#arms,)* }
+            }
+        }
+    });
+
+    let extra_methods = extras.iter().map(|(name, decl)| {
+        let method = format_ident!("{name}");
+        let doc = format!("Extra string for this variant (`{name}`).");
+        let arms = variants.iter().map(|v| {
+            let ident = v.ident;
+            let text = v.extras.get(name).cloned().unwrap_or_else(|| {
+                decl.default
+                    .clone()
+                    .unwrap_or_else(|| v.default_label(default))
+            });
+            quote! { Self::#ident => #text }
         });
         quote! {
             #[doc = #doc]
@@ -549,6 +736,8 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             }
 
             #(#case_methods)*
+
+            #(#extra_methods)*
         }
 
         impl #impl_generics ::core::fmt::Display for #name #ty_generics #where_clause {

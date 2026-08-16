@@ -1,0 +1,5 @@
+error: extra method `label` conflicts with a generated cognomen item
+ --> tests/ui/fail_reserved_variant_extra.rs:6:24
+  |
+6 |     #[cognomen(label = "x")]
+  |                        ^^^
