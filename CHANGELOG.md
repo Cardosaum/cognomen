@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `no_display` and `no_variants` so Cognomen can share a type with another derive that emits `Display` or `VARIANTS`
+
+### Fixed
+
+- `TryFrom` / `FromStr` now name `FromLabelError` instead of `Self::Error` / `Self::Err`, so variants named `Error` or `Err` compile
+
 ## [0.2.0](https://github.com/Cardosaum/cognomen/releases/tag/cognomen-v0.2.0) - 2026-08-16
 
 ### Added

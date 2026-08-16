@@ -23,6 +23,10 @@ use proc_macro::TokenStream;
 ///   a non-empty ASCII identifier. Default: `label`.
 /// - `crate = ::path`: crate path emitted in generated code. Default:
 ///   `::cognomen`. Set this when you re-export cognomen from another crate.
+/// - `no_display`: do not implement `Display`. Use this when another derive
+///   on the same type already implements it (for example numbered).
+/// - `no_variants`: do not emit `VARIANTS`. `LABELS` is still emitted.
+///
 /// # Variant attribute
 ///
 /// ```ignore
@@ -35,7 +39,8 @@ use proc_macro::TokenStream;
 ///
 /// # Extra methods
 ///
-/// Any other `name = "..."` becomes `const fn name(&self) -> &'static str`.
+/// Any other `name = "..."` besides `no_display` / `no_variants` becomes
+/// `const fn name(&self) -> &'static str`.
 ///
 /// ```ignore
 /// #[derive(Cognomen)]
@@ -58,8 +63,8 @@ use proc_macro::TokenStream;
 /// - `const fn as_str(&self) -> &'static str`
 /// - `const fn {prefix}_{case}(&self) -> &'static str` for each declared case
 /// - `const fn {name}(&self) -> &'static str` for each extra
-/// - `VARIANTS` / `LABELS` (non-generic enums)
-/// - `Display`, `AsRef<str>`, `PartialEq<str>`
+/// - `VARIANTS` / `LABELS` (non-generic enums; `no_variants` skips `VARIANTS`)
+/// - `Display` (skipped by `no_display`), `AsRef<str>`, `PartialEq<str>`
 /// - `TryFrom<&str>`, `FromStr`, `from_label`
 /// - `Serialize` / `Deserialize` (feature `serde`)
 ///

@@ -53,6 +53,9 @@
 //!   (must be a non-empty ASCII identifier; default `label`).
 //! - `crate = ::other::cognomen`: path used in generated code when this crate
 //!   is re-exported under another name.
+//! - `no_display`: do not implement `Display`. Use this when another derive
+//!   on the same type already implements it (for example numbered).
+//! - `no_variants`: do not emit `VARIANTS`. `LABELS` is still emitted.
 //!
 //! **Variant** (optional): `#[cognomen(rename = "io_error")]`
 //!
@@ -79,12 +82,15 @@
 //! Any other `name = "..."` is an [extra method](#extra-methods).
 //!
 //! Violations (non-enum, fields, missing case, collisions, bad prefix, bad
-//! extra) are compile errors.
+//! extra) are compile errors. Variants named `Error` or `Err` are fine:
+//! generated `TryFrom` / `FromStr` name [`FromLabelError`] instead of
+//! `Self::Error` / `Self::Err`.
 //!
 //! # Extra methods
 //!
-//! Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
-//! `rename` becomes `const fn name(&self) -> &'static str`.
+//! Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`,
+//! `rename`, `no_display`, and `no_variants` becomes
+//! `const fn name(&self) -> &'static str`.
 //!
 //! On a variant, that string is the variant's value. On the enum, that string
 //! is the default for variants that omit the key. If the enum does not set a
@@ -141,7 +147,9 @@
 //! - `{name}()` for each extra (`blurb()`, `hint()`, ...); omitted variants
 //!   use `as_str()` unless the enum sets a default
 //! - `E::VARIANTS: &'static [E]` and `E::LABELS: &'static [&'static str]`
-//! - `Display`, `AsRef<str>`, `PartialEq<str>` / `PartialEq<&str>`
+//!   (`no_variants` skips `VARIANTS`)
+//! - `Display` (`no_display` skips this), `AsRef<str>`, `PartialEq<str>` /
+//!   `PartialEq<&str>`
 //! - `TryFrom<&str>`, `FromStr`, `E::from_label`
 //! - `Serialize` / `Deserialize` (feature `serde`): out is `label()`, in
 //!   accepts any declared case or `rename`
@@ -284,6 +292,36 @@ mod tests {
         #[cognomen(blurb = "microphone / input device")]
         Mic,
         App,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(lower, no_display, no_variants)]
+    enum Quiet {
+        Mic,
+        App,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(lower)]
+    enum Status {
+        Error,
+        Err,
+        Ok,
+    }
+
+    #[test]
+    fn error_and_err_variants() {
+        assert_eq!(Status::Error.as_str(), "error");
+        assert_eq!(Status::try_from("err"), Ok(Status::Err));
+        assert_eq!("ok".parse::<Status>().unwrap(), Status::Ok);
+    }
+
+    #[test]
+    fn skip_display_and_variants() {
+        assert_eq!(Quiet::Mic.as_str(), "mic");
+        assert_eq!(Quiet::App.label(), "app");
+        assert_eq!(Quiet::LABELS, &["mic", "app"]);
+        assert_eq!(Quiet::from_label("mic").unwrap(), Quiet::Mic);
     }
 
     #[test]

@@ -59,6 +59,9 @@ The first case in `#[cognomen(...)]` is the default (`label()` / `as_str()` /
 - `prefix = "cfg"`: accessors become `cfg_snake`, `cfg_kebab`, ...
   (non-empty ASCII identifier; default `label`).
 - `crate = ::other::cognomen`: generated path when you re-export this crate.
+- `no_display`: skip `Display` so another derive (for example numbered) can implement it.
+- `no_variants`: skip `E::VARIANTS` (`LABELS` is still emitted).
+
 **Variant** (optional): `#[cognomen(rename = "io_error")]`
 
 Sets the default label to that exact string and accepts it when parsing.
@@ -85,8 +88,9 @@ are compile errors, pinned by trybuild tests under `tests/ui/`.
 
 ## Extra methods
 
-Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
-`rename` becomes `const fn name(&self) -> &'static str`.
+Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`,
+`rename`, `no_display`, and `no_variants` becomes
+`const fn name(&self) -> &'static str`.
 
 On a variant, that string is the variant's value. On the enum, that string
 is the default for variants that omit the key. If the enum does not set a
@@ -143,8 +147,8 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 | `label()` / `as_str()` | default case, or `rename` |
 | `label_snake()`, `label_kebab()`, ... | one method per declared case |
 | `{name}()` | each extra; `as_str()` if omitted, unless the enum sets a default |
-| `E::VARIANTS`, `E::LABELS` | declaration order |
-| `Display`, `AsRef<str>`, `PartialEq<str>` | compare against any declared label |
+| `E::VARIANTS`, `E::LABELS` | declaration order (`no_variants` skips `VARIANTS`) |
+| `Display`, `AsRef<str>`, `PartialEq<str>` | compare against any declared label (`no_display` skips `Display`) |
 | `TryFrom<&str>`, `FromStr`, `from_label` | always; uses `core` |
 | `Serialize` / `Deserialize` | feature `serde`; out is `label()`, in accepts any declared case |
 

@@ -94,6 +94,8 @@ struct CognomenAttr {
     prefix: String,
     crate_path: syn::Path,
     extras: Vec<(String, ExtraDecl)>,
+    no_display: bool,
+    no_variants: bool,
 }
 
 struct ExtraDecl {
@@ -154,7 +156,7 @@ fn parse_key_litstr(input: ParseStream<'_>) -> Result<(Ident, syn::LitStr)> {
 
 fn insert_extra(extras: &mut Vec<(String, ExtraDecl)>, key: Ident, default: String) -> Result<()> {
     let name = key.to_string();
-    if name == "prefix" || name == "rename" {
+    if name == "prefix" || name == "rename" || name == "no_display" || name == "no_variants" {
         return Err(syn::Error::new(
             key.span(),
             format!("`{name}` is not an extra method"),
@@ -244,6 +246,8 @@ impl Parse for CognomenAttr {
         let mut prefix = None;
         let mut crate_path = None;
         let mut extras = Vec::new();
+        let mut no_display = None;
+        let mut no_variants = None;
 
         while !input.is_empty() {
             if input.peek(Token![crate]) && input.peek2(Token![=]) {
@@ -293,6 +297,31 @@ impl Parse for CognomenAttr {
                 } else {
                     insert_extra(&mut extras, key, value.value())?;
                 }
+            } else if input.peek(syn::Ident) {
+                let ident: Ident = input.fork().parse()?;
+                if ident == "no_display" {
+                    let ident: Ident = input.parse()?;
+                    set_once(
+                        &mut no_display,
+                        true,
+                        ident.span(),
+                        "duplicate cognomen no_display",
+                    )?;
+                } else if ident == "no_variants" {
+                    let ident: Ident = input.parse()?;
+                    set_once(
+                        &mut no_variants,
+                        true,
+                        ident.span(),
+                        "duplicate cognomen no_variants",
+                    )?;
+                } else {
+                    let (style, span) = parse_case_style(input)?;
+                    if styles.contains(&style) {
+                        return Err(syn::Error::new(span, "duplicate cognomen case style"));
+                    }
+                    styles.push(style);
+                }
             } else {
                 let (style, span) = parse_case_style(input)?;
                 if styles.contains(&style) {
@@ -315,6 +344,8 @@ impl Parse for CognomenAttr {
             prefix: prefix.unwrap_or_else(|| String::from("label")),
             crate_path: crate_path.unwrap_or_else(|| syn::parse_quote!(::cognomen)),
             extras,
+            no_display: no_display.unwrap_or(false),
+            no_variants: no_variants.unwrap_or(false),
         })
     }
 }
@@ -629,13 +660,28 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     let (reverse_arms, eq_arms, all_labels) = reverse_eq_arms(name, &variants, &attr.styles)?;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let variants_const = input.generics.params.is_empty().then(|| {
+    let variants_const = (input.generics.params.is_empty() && !attr.no_variants).then(|| {
         quote! {
             /// All variants in declaration order.
             pub const VARIANTS: &'static [Self] = &[#(Self::#idents,)*];
+        }
+    });
 
+    let labels_const = input.generics.params.is_empty().then(|| {
+        quote! {
             /// Default [`Self::label`] for each variant in declaration order.
             pub const LABELS: &'static [&'static str] = &[#(#default_labels,)*];
+        }
+    });
+
+    let display_impl = (!attr.no_display).then(|| {
+        quote! {
+            impl #impl_generics ::core::fmt::Display for #name #ty_generics #where_clause {
+                #[inline]
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.write_str(self.label())
+                }
+            }
         }
     });
 
@@ -653,7 +699,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         impl #impl_generics ::core::convert::TryFrom<&str> for #name #ty_generics #where_clause {
             type Error = #crate_path::FromLabelError;
             #[inline]
-            fn try_from(s: &str) -> ::core::result::Result<Self, Self::Error> {
+            fn try_from(s: &str) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
                 match s {
                     #(#reverse_arms,)*
                     _ => ::core::result::Result::Err(#crate_path::FromLabelError::new(s)),
@@ -664,7 +710,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         impl #impl_generics ::core::str::FromStr for #name #ty_generics #where_clause {
             type Err = #crate_path::FromLabelError;
             #[inline]
-            fn from_str(s: &str) -> ::core::result::Result<Self, Self::Err> {
+            fn from_str(s: &str) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
                 ::core::convert::TryFrom::try_from(s)
             }
         }
@@ -718,6 +764,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     Ok(quote! {
         impl #impl_generics #name #ty_generics #where_clause {
             #variants_const
+            #labels_const
 
             /// Stable label for this variant in the default (first) case.
             ///
@@ -740,12 +787,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             #(#extra_methods)*
         }
 
-        impl #impl_generics ::core::fmt::Display for #name #ty_generics #where_clause {
-            #[inline]
-            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                f.write_str(self.label())
-            }
-        }
+        #display_impl
 
         impl #impl_generics ::core::convert::AsRef<str> for #name #ty_generics #where_clause {
             #[inline]
