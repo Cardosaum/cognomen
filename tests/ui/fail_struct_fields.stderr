@@ -1,5 +1,0 @@
-error: Cognomen only supports unit variants (no fields)
- --> tests/ui/fail_struct_fields.rs:7:5
-  |
-7 |     Named { x: u8 },
-  |     ^^^^^

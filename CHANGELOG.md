@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- fielded variants: `label()` / `as_str()` ignore the payload; `{field}` in a
+  variant extra interpolates and the method returns `Formatted`
+- tuple-index placeholders (`{0}`) and `{{` / `}}` escapes in extras
+
+### Changed
+
+- parse, `Variants`, and serde are omitted when any variant has a payload
+  (a label cannot reconstruct fields)
+
 ## [0.4.0](https://github.com/Cardosaum/cognomen/releases/tag/cognomen-v0.4.0) - 2026-08-16
 
 ### Added

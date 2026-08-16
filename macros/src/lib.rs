@@ -7,7 +7,7 @@ mod cognomen;
 
 use proc_macro::TokenStream;
 
-/// Derive stable, case-configured string labels for a unit-like enum.
+/// Derive stable, case-configured string labels for an enum.
 ///
 /// # Container attribute
 ///
@@ -36,7 +36,9 @@ use proc_macro::TokenStream;
 ///
 /// # Extra methods
 ///
-/// Any other `name = "..."` becomes `const fn name(&self) -> &'static str`.
+/// Any other `name = "..."` becomes an extra method (`const fn` returning
+/// `&'static str`, or [`cognomen::Formatted`] when a variant interpolates
+/// `{field}`).
 ///
 /// ```ignore
 /// #[derive(Cognomen)]
@@ -58,11 +60,12 @@ use proc_macro::TokenStream;
 /// - `const fn label(&self) -> &'static str`
 /// - `const fn as_str(&self) -> &'static str`
 /// - `const fn {prefix}_{case}(&self) -> &'static str` for each declared case
-/// - `const fn {name}(&self) -> &'static str` for each extra
-/// - `cognomen::Variants` (non-generic enums): `VARIANTS` / `LABELS`
+/// - `{name}(&self)` for each extra (`&'static str`, or `Formatted` when
+///   interpolating)
+/// - `cognomen::Variants` (non-generic, fieldless enums): `VARIANTS` / `LABELS`
 /// - `AsRef<str>`, `PartialEq<str>`
-/// - `TryFrom<&str>`, `FromStr`, `from_label`
-/// - `Serialize` / `Deserialize` (feature `serde`)
+/// - `TryFrom<&str>`, `FromStr`, `from_label` (fieldless enums)
+/// - `Serialize` / `Deserialize` (feature `serde`; fieldless enums)
 ///
 /// See the [`cognomen`](https://docs.rs/cognomen) crate docs for case styles,
 /// extra methods, features, and `no_std`.

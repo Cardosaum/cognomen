@@ -3,8 +3,8 @@ use cognomen::Cognomen;
 #[derive(Cognomen)]
 #[cognomen(snake_case)]
 enum Mode {
-    Unit,
-    WithField(u8),
+    #[cognomen(reason = "host open failed {cause}")]
+    OpenFailed,
 }
 
 fn main() {}

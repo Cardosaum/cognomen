@@ -5,7 +5,7 @@
 [![license](https://img.shields.io/crates/l/cognomen.svg)](https://github.com/Cardosaum/cognomen)
 
 *Cognomen* is Latin for "an extra name given to a person or thing". This crate
-gives every unit-like enum variant a second, stable string **label**.
+gives every enum variant a second, stable string **label**.
 
 Downstream crates use it as the seam between a Rust ident and the string a
 config file, log line, CLI flag, or wire protocol actually carries. Case
@@ -82,18 +82,24 @@ assert_eq!(Wire::from_label("io_error").unwrap(), Wire::IoFailed);
 
 Any other `name = "..."` is an [extra method](#extra-methods).
 
-Violations (non-enum, fields, missing case, collisions, bad prefix, bad extra)
-are compile errors, pinned by trybuild tests under `tests/ui/`.
+Violations (non-enum, missing case, collisions, bad prefix, bad extra, unknown
+`{field}` placeholder) are compile errors, pinned by trybuild tests under
+`tests/ui/`.
 
 ## Extra methods
 
 Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
-`rename` becomes `const fn name(&self) -> &'static str`.
+`rename` becomes an extra method.
 
 On a variant, that string is the variant's value. On the enum, that string
 is the default for variants that omit the key. If the enum does not set a
 default, omitted variants use `as_str()` / `label()` (including `rename`).
 `name()` on the enum is the same as `name = ""`.
+
+`{field}` in a **variant** extra interpolates that named (or tuple-index)
+payload. The method then returns `Formatted` instead of `&'static str`.
+Enum-level defaults cannot contain placeholders. Write `{` / `}` as `{{` /
+`}}`.
 
 ```rust
 use cognomen::Cognomen;
@@ -132,6 +138,26 @@ assert_eq!(SourceKind::Mic.hint(), "CoreAudio input");
 assert_eq!(SourceKind::App.hint(), "n/a");
 ```
 
+Fielded variants keep `label()` / `as_str()`. Parse, `Variants`, and serde
+are omitted. Interpolate extras from the fields:
+
+```rust
+use cognomen::Cognomen;
+
+#[derive(Cognomen)]
+#[cognomen(snake_case)]
+enum HostError {
+    #[cognomen(reason = "host backend unsupported {capability}")]
+    Unsupported { capability: &'static str },
+    #[cognomen(reason = "host open failed {cause}")]
+    OpenFailed { cause: &'static str },
+}
+
+let e = HostError::OpenFailed { cause: "busy" };
+assert_eq!(e.as_str(), "open_failed");
+assert_eq!(e.reason(), "host open failed busy");
+```
+
 Several extras can coexist. They are not accepted by `from_label` or
 serde. Names that collide with generated items (`label`, `as_str`,
 `{prefix}_{case}`, ...) are compile errors.
@@ -144,11 +170,11 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 |------|--------|
 | `label()` / `as_str()` | default case, or `rename` |
 | `label_snake()`, `label_kebab()`, ... | one method per declared case |
-| `{name}()` | each extra; `as_str()` if omitted, unless the enum sets a default |
-| `Variants` | `E::VARIANTS` / `E::LABELS` after `use cognomen::Variants` (non-generic). Trait items, so they cannot clash |
+| `{name}()` | each extra; `as_str()` if omitted, unless the enum sets a default. `{field}` interpolation returns `Formatted` |
+| `Variants` | `E::VARIANTS` / `E::LABELS` after `use cognomen::Variants` (non-generic, fieldless). Trait items, so they cannot clash |
 | `AsRef<str>`, `PartialEq<str>` | compare against any declared label |
-| `TryFrom<&str>`, `FromStr`, `from_label` | always; uses `core` |
-| `Serialize` / `Deserialize` | feature `serde`; out is `label()`, in accepts any declared case |
+| `TryFrom<&str>`, `FromStr`, `from_label` | fieldless enums; uses `core` |
+| `Serialize` / `Deserialize` | feature `serde`, fieldless; out is `label()`, in accepts any declared case |
 | `T::value_parser()` | feature `clap`; import `cognomen::clap::ArgType` in the binary |
 
 ## Features

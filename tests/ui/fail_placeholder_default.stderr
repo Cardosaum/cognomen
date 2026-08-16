@@ -1,0 +1,5 @@
+error: placeholders are only valid on a variant extra
+ --> tests/ui/fail_placeholder_default.rs:4:33
+  |
+4 | #[cognomen(snake_case, reason = "host open failed {cause}")]
+  |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^

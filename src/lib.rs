@@ -1,4 +1,4 @@
-//! Compile-time string labels for unit-like enum variants.
+//! Compile-time string labels for enum variants.
 //!
 //! A *cognomen* is an extra name. This crate gives each variant a second,
 //! stable label: a `&'static str` whose case you pick in the derive attribute.
@@ -78,20 +78,25 @@
 //!
 //! Any other `name = "..."` is an [extra method](#extra-methods).
 //!
-//! Violations (non-enum, fields, missing case, collisions, bad prefix, bad
-//! extra) are compile errors. Variants named `Error` or `Err` are fine:
-//! generated `TryFrom` / `FromStr` name [`FromLabelError`] instead of
-//! `Self::Error` / `Self::Err`.
+//! Violations (non-enum, missing case, collisions, bad prefix, bad extra,
+//! unknown `{field}` placeholder) are compile errors. Variants named `Error`
+//! or `Err` are fine: generated `TryFrom` / `FromStr` name [`FromLabelError`]
+//! instead of `Self::Error` / `Self::Err`.
 //!
 //! # Extra methods
 //!
 //! Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
-//! `rename` becomes `const fn name(&self) -> &'static str`.
+//! `rename` becomes an extra method.
 //!
 //! On a variant, that string is the variant's value. On the enum, that string
 //! is the default for variants that omit the key. If the enum does not set a
 //! default, omitted variants use `as_str()` / `label()` (including `rename`).
 //! `name()` on the enum is the same as `name = ""`.
+//!
+//! `{field}` in a **variant** extra interpolates that named (or tuple-index)
+//! payload. The method then returns [`Formatted`] instead of `&'static str`.
+//! Enum-level defaults cannot contain placeholders. `{` / `}` in the text
+//! are written `{{` / `}}`.
 //!
 //! ```
 //! use cognomen::Cognomen;
@@ -130,6 +135,32 @@
 //! assert_eq!(SourceKind::App.hint(), "n/a");
 //! ```
 //!
+//! Fielded variants keep `label()` / `as_str()` (the ident case). Parse,
+//! [`Variants`], and serde are omitted: a label is not enough to build a
+//! payload. Interpolate extras from the fields:
+//!
+//! ```
+//! use cognomen::Cognomen;
+//!
+//! #[derive(Debug, Clone, PartialEq, Eq, Cognomen)]
+//! #[cognomen(snake_case)]
+//! enum HostError {
+//!     #[cognomen(reason = "host backend unsupported {capability}")]
+//!     Unsupported { capability: &'static str },
+//!     #[cognomen(reason = "host open failed {cause}")]
+//!     OpenFailed { cause: &'static str },
+//!     #[cognomen(reason = "host refused request {why}")]
+//!     BadRequest { why: &'static str },
+//!     #[cognomen(reason = "host io failed {status}")]
+//!     Io { status: &'static str },
+//! }
+//!
+//! let e = HostError::OpenFailed { cause: "busy" };
+//! assert_eq!(e.as_str(), "open_failed");
+//! assert_eq!(e.reason(), "host open failed busy");
+//! assert_eq!(format!("{}", e.reason()), "host open failed busy");
+//! ```
+//!
 //! Several extras can coexist. They are not accepted by `from_label` or
 //! serde. Names that collide with generated items (`label`, `as_str`,
 //! `{prefix}_{case}`, ...) are compile errors.
@@ -140,16 +171,18 @@
 //!
 //! - `label()` / `as_str()` -> `&'static str` (default case, or `rename`)
 //! - `label_snake()`, `label_kebab()`, ...
-//! - `{name}()` for each extra (`blurb()`, `hint()`, ...); omitted variants
-//!   use `as_str()` unless the enum sets a default
-//! - [`Variants`] (non-generic enums): `E::VARIANTS` and `E::LABELS` after
-//!   `use cognomen::Variants`. These are trait items, so they cannot clash
-//!   with another derive or a user `const VARIANTS`.
-//! - No `Display` impl. Print the label with `e.label()` / `e.as_str()`.
+//! - `{name}()` for each extra (`blurb()`, `hint()`, `reason()`, ...); omitted
+//!   variants use `as_str()` unless the enum sets a default. `{field}`
+//!   interpolation returns [`Formatted`]
+//! - [`Variants`] (non-generic, fieldless enums): `E::VARIANTS` and
+//!   `E::LABELS` after `use cognomen::Variants`. These are trait items, so
+//!   they cannot clash with another derive or a user `const VARIANTS`.
+//! - No `Display` impl. Print the label with `e.label()` / `e.as_str()`,
+//!   or an interpolating extra with `write!(f, "{}", e.reason())`.
 //! - `AsRef<str>`, `PartialEq<str>` / `PartialEq<&str>`
-//! - `TryFrom<&str>`, `FromStr`, `E::from_label`
-//! - `Serialize` / `Deserialize` (feature `serde`): out is `label()`, in
-//!   accepts any declared case or `rename`
+//! - `TryFrom<&str>`, `FromStr`, `E::from_label` (fieldless enums)
+//! - `Serialize` / `Deserialize` (feature `serde`, fieldless): out is
+//!   `label()`, in accepts any declared case or `rename`
 //! - [`clap::ArgType::value_parser`] (feature `clap`): clap flag parser in
 //!   the binary; the enum crate can stay `no_std`
 //!
@@ -196,8 +229,11 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+mod formatted;
+
 #[doc(inline)]
 pub use cognomen_macros::Cognomen;
+pub use formatted::Formatted;
 
 #[cfg(feature = "clap")]
 #[cfg_attr(docsrs, doc(cfg(feature = "clap")))]
@@ -371,6 +407,32 @@ mod tests {
         assert_eq!(Shared::Mic.as_str(), "mic");
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum HostError {
+        #[cognomen(reason = "host backend unsupported {capability}")]
+        Unsupported { capability: &'static str },
+        #[cognomen(reason = "host open failed {cause}")]
+        OpenFailed { cause: &'static str },
+        #[cognomen(reason = "host refused request {why}")]
+        BadRequest { why: &'static str },
+        #[cognomen(reason = "host io failed {status}")]
+        Io { status: &'static str },
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum Mixed {
+        #[cognomen(reason = "stdout write failed")]
+        Write,
+        #[cognomen(reason = "host open failed {cause}")]
+        OpenFailed { cause: &'static str },
+        #[cognomen(reason = "use {{braces}} {name}")]
+        Escaped { name: &'static str },
+        #[cognomen(reason = "open failed {0}")]
+        Tuple(u8),
+    }
+
     #[test]
     fn extra_methods() {
         assert_eq!(Kind::Mic.as_str(), "mic");
@@ -384,6 +446,64 @@ mod tests {
         assert_eq!(KindEmpty::App.blurb(), "");
         assert_eq!(KindEmpty::Mic.hint(), "");
         assert_eq!(KindEmpty::App.hint(), "");
+    }
+
+    #[test]
+    fn interpolates_named_payload() {
+        let e = HostError::OpenFailed { cause: "busy" };
+        assert_eq!(e.as_str(), "open_failed");
+        assert_eq!(e.label_snake(), "open_failed");
+        assert_eq!(e.reason(), "host open failed busy");
+        assert_eq!(
+            HostError::Unsupported { capability: "x" }.reason(),
+            "host backend unsupported x"
+        );
+        assert_eq!(
+            HostError::BadRequest {
+                why: "device name has interior NUL"
+            }
+            .reason(),
+            "host refused request device name has interior NUL"
+        );
+        assert_eq!(
+            HostError::Io {
+                status: "short write"
+            }
+            .reason(),
+            "host io failed short write"
+        );
+        assert!(e == "open_failed");
+        assert_eq!(core::convert::AsRef::<str>::as_ref(&e), "open_failed");
+    }
+
+    #[test]
+    fn interpolates_mixed_and_tuple() {
+        assert_eq!(Mixed::Write.reason(), "stdout write failed");
+        assert_eq!(
+            Mixed::OpenFailed { cause: "busy" }.reason(),
+            "host open failed busy"
+        );
+        assert_eq!(Mixed::Escaped { name: "mic" }.reason(), "use {braces} mic");
+        assert_eq!(Mixed::Tuple(7).reason(), "open failed 7");
+        assert_eq!(Mixed::Tuple(7).as_str(), "tuple");
+    }
+
+    #[cfg(feature = "alloc")]
+    #[derive(Debug, Clone, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum OwnedHostError {
+        #[cognomen(reason = "host open failed {cause}")]
+        OpenFailed { cause: alloc::string::String },
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn interpolates_owned_string() {
+        let e = OwnedHostError::OpenFailed {
+            cause: alloc::string::String::from("busy"),
+        };
+        assert_eq!(e.reason(), "host open failed busy");
+        assert_eq!(e.reason().to_string(), "host open failed busy");
     }
 
     #[test]
