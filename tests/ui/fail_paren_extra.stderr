@@ -1,0 +1,5 @@
+error: expected a single string literal
+ --> tests/ui/fail_paren_extra.rs:4:33
+  |
+4 | #[cognomen(snake_case, blurb("a", "b"))]
+  |                                 ^

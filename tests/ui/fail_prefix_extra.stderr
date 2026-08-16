@@ -1,0 +1,5 @@
+error: `prefix` is not an extra method
+ --> tests/ui/fail_prefix_extra.rs:4:24
+  |
+4 | #[cognomen(snake_case, prefix())]
+  |                        ^^^^^^

@@ -15,10 +15,12 @@ impl core::fmt::Display for Kind {
 
 impl Kind {
     pub const VARIANTS: &'static [&'static str] = &["mic", "app"];
+    pub const LABELS: &'static [&'static str] = &["user-mic", "user-app"];
 }
 
 fn main() {
     assert_eq!(Kind::VARIANTS, &["mic", "app"]);
+    assert_eq!(Kind::LABELS, &["user-mic", "user-app"]);
     assert_eq!(<Kind as Variants>::VARIANTS, &[Kind::Mic, Kind::App]);
     assert_eq!(<Kind as Variants>::LABELS, &["mic", "app"]);
     assert_eq!(Kind::Mic.to_string(), "user");

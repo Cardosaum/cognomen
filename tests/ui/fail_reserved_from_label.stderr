@@ -1,0 +1,5 @@
+error: extra method `from_label` conflicts with a generated cognomen item
+ --> tests/ui/fail_reserved_from_label.rs:4:24
+  |
+4 | #[cognomen(snake_case, from_label = "x")]
+  |                        ^^^^^^^^^^

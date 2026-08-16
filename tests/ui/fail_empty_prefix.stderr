@@ -1,0 +1,5 @@
+error: prefix must be a non-empty ASCII identifier (e.g. prefix = "label")
+ --> tests/ui/fail_empty_prefix.rs:4:33
+  |
+4 | #[cognomen(snake_case, prefix = "")]
+  |                                 ^^

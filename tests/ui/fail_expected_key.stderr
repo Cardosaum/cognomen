@@ -1,0 +1,5 @@
+error: expected `key = "..."` or `key("...")`
+ --> tests/ui/fail_expected_key.rs:6:16
+  |
+6 |     #[cognomen(foo)]
+  |                ^^^

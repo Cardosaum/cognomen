@@ -1,0 +1,5 @@
+error: extra method `as_ref` conflicts with a generated cognomen item
+ --> tests/ui/fail_reserved_as_ref.rs:4:24
+  |
+4 | #[cognomen(snake_case, as_ref = "x")]
+  |                        ^^^^^^

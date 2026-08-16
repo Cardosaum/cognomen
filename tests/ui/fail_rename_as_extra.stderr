@@ -1,0 +1,5 @@
+error: `rename` is not an extra method
+ --> tests/ui/fail_rename_as_extra.rs:4:24
+  |
+4 | #[cognomen(snake_case, rename())]
+  |                        ^^^^^^

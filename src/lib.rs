@@ -405,6 +405,169 @@ mod tests {
         assert_eq!(Mode::try_from("nope").unwrap_err().input, "nope");
     }
 
+    const fn mode_label_in_const() -> &'static str {
+        Mode::SingleProcess.label()
+    }
+
+    #[test]
+    fn works_in_const() {
+        assert_eq!(mode_label_in_const(), "single_process");
+        const TABLES: &[&str] = Mode::LABELS;
+        assert_eq!(TABLES, &["single_process", "multi_process"]);
+    }
+
+    #[test]
+    fn from_label_error_new() {
+        let err = FromLabelError::new("nope");
+        #[cfg(feature = "alloc")]
+        {
+            assert_eq!(err.input, "nope");
+            assert_eq!(err.to_string(), "no cognomen label matches `nope`");
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            assert_eq!(err.to_string(), "no cognomen label matches");
+        }
+        #[cfg(feature = "std")]
+        {
+            let _: &dyn std::error::Error = &err;
+        }
+    }
+
+    #[test]
+    fn partial_eq_mismatch() {
+        assert!(Mode::SingleProcess != "nope");
+        assert!("nope" != Mode::SingleProcess);
+        assert!(Mode::MultiProcess != "single_process");
+        assert!(Mode::SingleProcess == "single-process");
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum Acronym {
+        HTTPResponse,
+        Utf8,
+        IPv4,
+    }
+
+    #[test]
+    fn word_splitting() {
+        assert_eq!(Acronym::HTTPResponse.as_str(), "http_response");
+        assert_eq!(Acronym::Utf8.as_str(), "utf8");
+        assert_eq!(Acronym::IPv4.as_str(), "i_pv4");
+        assert_eq!(
+            Acronym::from_label("http_response").unwrap(),
+            Acronym::HTTPResponse
+        );
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(lower, blurb())]
+    enum ParenExtra {
+        #[cognomen(blurb = "mic")]
+        Mic,
+        App,
+    }
+
+    #[test]
+    fn extra_paren_default_is_empty() {
+        assert_eq!(ParenExtra::Mic.blurb(), "mic");
+        assert_eq!(ParenExtra::App.blurb(), "");
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum Generic<const N: usize> {
+        LeftHand,
+        RightHand,
+    }
+
+    #[test]
+    fn generic_has_labels_not_tables() {
+        assert_eq!(Generic::<1>::LeftHand.as_str(), "left_hand");
+        assert_eq!(
+            Generic::<2>::from_label("right_hand").unwrap(),
+            Generic::<2>::RightHand
+        );
+    }
+
+    impl Shared {
+        pub const LABELS: &'static [&'static str] = &["user-mic", "user-app"];
+    }
+
+    #[test]
+    fn user_labels_do_not_hide_trait_labels() {
+        assert_eq!(Shared::LABELS, &["user-mic", "user-app"]);
+        assert_eq!(<Shared as Variants>::LABELS, &["mic", "app"]);
+    }
+
+    #[test]
+    fn error_and_err_parse() {
+        assert_eq!(Status::from_label("error").unwrap(), Status::Error);
+        assert_eq!(Status::from_label("err").unwrap(), Status::Err);
+        assert!(Status::from_label("ok").is_ok());
+        assert!(Status::try_from("Error").is_err());
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(
+        snake, kebab, camel_case, pascal, screaming, lowercase, uppercase, title_case
+    )]
+    enum Alias {
+        SingleProcess,
+    }
+
+    #[test]
+    fn case_aliases() {
+        assert_eq!(Alias::SingleProcess.label(), "single_process");
+        assert_eq!(Alias::SingleProcess.label_snake(), "single_process");
+        assert_eq!(Alias::SingleProcess.label_kebab(), "single-process");
+        assert_eq!(Alias::SingleProcess.label_camel(), "singleProcess");
+        assert_eq!(Alias::SingleProcess.label_pascal(), "SingleProcess");
+        assert_eq!(
+            Alias::SingleProcess.label_screaming_snake(),
+            "SINGLE_PROCESS"
+        );
+        assert_eq!(Alias::SingleProcess.label_lower(), "singleprocess");
+        assert_eq!(Alias::SingleProcess.label_upper(), "SINGLEPROCESS");
+        assert_eq!(Alias::SingleProcess.label_title(), "Single Process");
+        assert_eq!(
+            Alias::from_label("single-process").unwrap(),
+            Alias::SingleProcess
+        );
+        assert_eq!(
+            Alias::from_label("SINGLE_PROCESS").unwrap(),
+            Alias::SingleProcess
+        );
+        assert_eq!(
+            Alias::from_label("Single Process").unwrap(),
+            Alias::SingleProcess
+        );
+        assert!("singleProcess" == Alias::SingleProcess);
+        assert!(Alias::SingleProcess == *"single_process");
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case, kebab-case, prefix = "cfg")]
+    enum Prefixed {
+        EnableLogging,
+    }
+
+    #[test]
+    fn prefix_and_as_ref() {
+        assert_eq!(Prefixed::EnableLogging.label(), "enable_logging");
+        assert_eq!(Prefixed::EnableLogging.cfg_snake(), "enable_logging");
+        assert_eq!(Prefixed::EnableLogging.cfg_kebab(), "enable-logging");
+        assert_eq!(
+            core::convert::AsRef::<str>::as_ref(&Prefixed::EnableLogging),
+            "enable_logging"
+        );
+        assert_eq!(
+            "enable-logging".parse::<Prefixed>().unwrap(),
+            Prefixed::EnableLogging
+        );
+    }
+
     #[cfg(feature = "serde")]
     #[test]
     fn serde_roundtrip() {
@@ -415,5 +578,10 @@ mod tests {
         assert_eq!(back, v);
         let kebab: Mode = serde_json::from_str("\"single-process\"").unwrap();
         assert_eq!(kebab, v);
+        let generic = Generic::<3>::LeftHand;
+        let gs = serde_json::to_string(&generic).unwrap();
+        assert_eq!(gs, "\"left_hand\"");
+        let gback: Generic<3> = serde_json::from_str(&gs).unwrap();
+        assert_eq!(gback, generic);
     }
 }
