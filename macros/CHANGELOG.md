@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/Cardosaum/cognomen/compare/cognomen-macros-v0.2.0...cognomen-macros-v0.2.1) - 2026-08-16
+
+### Other
+
+- Put tables on Variants and stop implementing Display
+
 ### Changed
 
 - emit `VARIANTS` / `LABELS` on `cognomen::Variants`, not as inherent items

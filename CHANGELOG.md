@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/Cardosaum/cognomen/compare/cognomen-v0.2.0...cognomen-v0.2.1) - 2026-08-16
+
+### Other
+
+- Put tables on Variants and stop implementing Display
+
 ### Changed
 
 - `VARIANTS` and `LABELS` live on the `Variants` trait, not as inherent items, so they cannot clash with another derive or user code
