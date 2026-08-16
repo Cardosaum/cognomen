@@ -1,5 +1,0 @@
-error: duplicate cognomen no_variants
- --> tests/ui/fail_duplicate_no_variants.rs:4:32
-  |
-4 | #[cognomen(lower, no_variants, no_variants)]
-  |                                ^^^^^^^^^^^

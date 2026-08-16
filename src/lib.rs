@@ -10,7 +10,7 @@
 //! # Quick start
 //!
 //! ```
-//! use cognomen::Cognomen;
+//! use cognomen::{Cognomen, Variants};
 //!
 //! #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 //! #[cognomen(snake_case, kebab-case)]
@@ -29,7 +29,7 @@
 //! ```
 //!
 //! The first case in `#[cognomen(...)]` is the default (`label()` / `as_str()` /
-//! `Display` / serde out). Every listed case also gets `{prefix}_{case}`.
+//! serde out). Every listed case also gets `{prefix}_{case}`.
 //!
 //! # Case styles
 //!
@@ -53,9 +53,6 @@
 //!   (must be a non-empty ASCII identifier; default `label`).
 //! - `crate = ::other::cognomen`: path used in generated code when this crate
 //!   is re-exported under another name.
-//! - `no_display`: do not implement `Display`. Use this when another derive
-//!   on the same type already implements it (for example numbered).
-//! - `no_variants`: do not emit `VARIANTS`. `LABELS` is still emitted.
 //!
 //! **Variant** (optional): `#[cognomen(rename = "io_error")]`
 //!
@@ -88,9 +85,8 @@
 //!
 //! # Extra methods
 //!
-//! Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`,
-//! `rename`, `no_display`, and `no_variants` becomes
-//! `const fn name(&self) -> &'static str`.
+//! Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
+//! `rename` becomes `const fn name(&self) -> &'static str`.
 //!
 //! On a variant, that string is the variant's value. On the enum, that string
 //! is the default for variants that omit the key. If the enum does not set a
@@ -134,9 +130,9 @@
 //! assert_eq!(SourceKind::App.hint(), "n/a");
 //! ```
 //!
-//! Several extras can coexist. They are not accepted by `from_label`,
-//! `Display`, or serde. Names that collide with generated items (`label`,
-//! `as_str`, `{prefix}_{case}`, ...) are compile errors.
+//! Several extras can coexist. They are not accepted by `from_label` or
+//! serde. Names that collide with generated items (`label`, `as_str`,
+//! `{prefix}_{case}`, ...) are compile errors.
 //!
 //! # Generated API
 //!
@@ -146,10 +142,11 @@
 //! - `label_snake()`, `label_kebab()`, ...
 //! - `{name}()` for each extra (`blurb()`, `hint()`, ...); omitted variants
 //!   use `as_str()` unless the enum sets a default
-//! - `E::VARIANTS: &'static [E]` and `E::LABELS: &'static [&'static str]`
-//!   (`no_variants` skips `VARIANTS`)
-//! - `Display` (`no_display` skips this), `AsRef<str>`, `PartialEq<str>` /
-//!   `PartialEq<&str>`
+//! - [`Variants`] (non-generic enums): `E::VARIANTS` and `E::LABELS` after
+//!   `use cognomen::Variants`. These are trait items, so they cannot clash
+//!   with another derive or a user `const VARIANTS`.
+//! - No `Display` impl. Print the label with `e.label()` / `e.as_str()`.
+//! - `AsRef<str>`, `PartialEq<str>` / `PartialEq<&str>`
 //! - `TryFrom<&str>`, `FromStr`, `E::from_label`
 //! - `Serialize` / `Deserialize` (feature `serde`): out is `label()`, in
 //!   accepts any declared case or `rename`
@@ -168,7 +165,7 @@
 //! cognomen = { version = "0.1", default-features = false }
 //! ```
 //!
-//! Labels, parse, `Display`, `AsRef`, and `VARIANTS` use only `core`. Add
+//! Labels, parse, `AsRef`, and [`Variants`] use only `core`. Add
 //! `features = ["alloc"]` to keep the unmatched string on parse errors. Add
 //! `features = ["serde"]` for wire formats.
 //!
@@ -196,6 +193,34 @@ extern crate std;
 
 #[doc(inline)]
 pub use cognomen_macros::Cognomen;
+
+/// Declaration-order tables for a non-generic cognomen enum.
+///
+/// `VARIANTS` and `LABELS` live on this trait, not as inherent items on
+/// `E`. Another derive, or a user `const VARIANTS`, cannot clash with them.
+/// Import the trait to use `E::VARIANTS`, or spell the path:
+/// `<E as cognomen::Variants>::VARIANTS`.
+///
+/// ```
+/// use cognomen::{Cognomen, Variants};
+///
+/// #[derive(Debug, Clone, Copy, PartialEq, Cognomen)]
+/// #[cognomen(lower)]
+/// enum Kind {
+///     Mic,
+///     App,
+/// }
+///
+/// assert_eq!(Kind::VARIANTS, &[Kind::Mic, Kind::App]);
+/// assert_eq!(Kind::LABELS, &["mic", "app"]);
+/// ```
+pub trait Variants: Sized + 'static {
+    /// All variants in declaration order.
+    const VARIANTS: &'static [Self];
+
+    /// Default label for each variant in declaration order.
+    const LABELS: &'static [&'static str];
+}
 
 /// Error returned when a string matches no declared label.
 ///
@@ -267,6 +292,8 @@ pub use serde as __serde;
 mod tests {
     extern crate std;
 
+    use std::string::ToString;
+
     use super::*;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
@@ -295,10 +322,20 @@ mod tests {
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
-    #[cognomen(lower, no_display, no_variants)]
-    enum Quiet {
+    #[cognomen(lower)]
+    enum Shared {
         Mic,
         App,
+    }
+
+    impl core::fmt::Display for Shared {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.write_str("user")
+        }
+    }
+
+    impl Shared {
+        pub const VARIANTS: &'static [&'static str] = &["mic", "app"];
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
@@ -317,11 +354,12 @@ mod tests {
     }
 
     #[test]
-    fn skip_display_and_variants() {
-        assert_eq!(Quiet::Mic.as_str(), "mic");
-        assert_eq!(Quiet::App.label(), "app");
-        assert_eq!(Quiet::LABELS, &["mic", "app"]);
-        assert_eq!(Quiet::from_label("mic").unwrap(), Quiet::Mic);
+    fn tables_do_not_clash_with_user_items() {
+        assert_eq!(Shared::VARIANTS, &["mic", "app"]);
+        assert_eq!(<Shared as Variants>::VARIANTS, &[Shared::Mic, Shared::App]);
+        assert_eq!(<Shared as Variants>::LABELS, &["mic", "app"]);
+        assert_eq!(Shared::Mic.to_string(), "user");
+        assert_eq!(Shared::Mic.as_str(), "mic");
     }
 
     #[test]

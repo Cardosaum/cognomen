@@ -1,5 +1,0 @@
-error: duplicate cognomen no_display
- --> tests/ui/fail_duplicate_no_display.rs:4:31
-  |
-4 | #[cognomen(lower, no_display, no_display)]
-  |                               ^^^^^^^^^^

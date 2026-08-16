@@ -7,9 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- `no_display` and `no_variants` so Cognomen can share a type with another derive that emits `Display` or `VARIANTS`
+- emit `VARIANTS` / `LABELS` on `cognomen::Variants`, not as inherent items
+- do not implement `Display`
 
 ### Fixed
 

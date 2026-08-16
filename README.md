@@ -19,7 +19,7 @@ cognomen = "0.1"
 ```
 
 ```rust
-use cognomen::Cognomen;
+use cognomen::{Cognomen, Variants};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 #[cognomen(snake_case, kebab-case)]
@@ -33,10 +33,11 @@ assert_eq!(Mode::MultiProcess.as_str(), "multi_process");
 assert_eq!(Mode::SingleProcess.label_kebab(), "single-process");
 assert_eq!(Mode::try_from("single-process"), Ok(Mode::SingleProcess));
 assert!(Mode::SingleProcess == "single-process");
+assert_eq!(Mode::VARIANTS.len(), 2);
 ```
 
 The first case in `#[cognomen(...)]` is the default (`label()` / `as_str()` /
-`Display` / serde out). Every listed case also gets `{prefix}_{case}`.
+serde out). Every listed case also gets `{prefix}_{case}`.
 
 ## Case styles
 
@@ -59,8 +60,6 @@ The first case in `#[cognomen(...)]` is the default (`label()` / `as_str()` /
 - `prefix = "cfg"`: accessors become `cfg_snake`, `cfg_kebab`, ...
   (non-empty ASCII identifier; default `label`).
 - `crate = ::other::cognomen`: generated path when you re-export this crate.
-- `no_display`: skip `Display` so another derive (for example numbered) can implement it.
-- `no_variants`: skip `E::VARIANTS` (`LABELS` is still emitted).
 
 **Variant** (optional): `#[cognomen(rename = "io_error")]`
 
@@ -88,9 +87,8 @@ are compile errors, pinned by trybuild tests under `tests/ui/`.
 
 ## Extra methods
 
-Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`,
-`rename`, `no_display`, and `no_variants` becomes
-`const fn name(&self) -> &'static str`.
+Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
+`rename` becomes `const fn name(&self) -> &'static str`.
 
 On a variant, that string is the variant's value. On the enum, that string
 is the default for variants that omit the key. If the enum does not set a
@@ -134,9 +132,9 @@ assert_eq!(SourceKind::Mic.hint(), "CoreAudio input");
 assert_eq!(SourceKind::App.hint(), "n/a");
 ```
 
-Several extras can coexist. They are not accepted by `from_label`,
-`Display`, or serde. Names that collide with generated items (`label`,
-`as_str`, `{prefix}_{case}`, ...) are compile errors.
+Several extras can coexist. They are not accepted by `from_label` or
+serde. Names that collide with generated items (`label`, `as_str`,
+`{prefix}_{case}`, ...) are compile errors.
 
 ## Generated API
 
@@ -147,8 +145,8 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 | `label()` / `as_str()` | default case, or `rename` |
 | `label_snake()`, `label_kebab()`, ... | one method per declared case |
 | `{name}()` | each extra; `as_str()` if omitted, unless the enum sets a default |
-| `E::VARIANTS`, `E::LABELS` | declaration order (`no_variants` skips `VARIANTS`) |
-| `Display`, `AsRef<str>`, `PartialEq<str>` | compare against any declared label (`no_display` skips `Display`) |
+| `Variants` | `E::VARIANTS` / `E::LABELS` after `use cognomen::Variants` (non-generic). Trait items, so they cannot clash |
+| `AsRef<str>`, `PartialEq<str>` | compare against any declared label |
 | `TryFrom<&str>`, `FromStr`, `from_label` | always; uses `core` |
 | `Serialize` / `Deserialize` | feature `serde`; out is `label()`, in accepts any declared case |
 
@@ -166,7 +164,7 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 cognomen = { version = "0.1", default-features = false }
 ```
 
-Labels, parse, `Display`, `AsRef`, and `VARIANTS` use only `core`. Add
+Labels, parse, `AsRef`, and `Variants` use only `core`. Add
 `features = ["alloc"]` to keep the unmatched string on parse errors. Add
 `features = ["serde"]` for wire formats.
 
