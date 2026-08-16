@@ -1,0 +1,5 @@
+error: duplicate extra `blurb` on variant
+ --> tests/ui/fail_duplicate_variant_extra.rs:6:29
+  |
+6 |     #[cognomen(blurb = "a", blurb = "b")]
+  |                             ^^^^^

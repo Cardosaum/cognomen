@@ -1,0 +1,5 @@
+error: duplicate cognomen extra `blurb`
+ --> tests/ui/fail_duplicate_extra.rs:4:36
+  |
+4 | #[cognomen(snake_case, blurb = "", blurb = "")]
+  |                                    ^^^^^

@@ -76,8 +76,61 @@
 //! assert_eq!(Wire::try_from("io-failed"), Ok(Wire::IoFailed));
 //! ```
 //!
-//! Violations (non-enum, fields, missing case, collisions, bad prefix) are
-//! compile errors.
+//! Any other `name = "..."` is an [extra method](#extra-methods).
+//!
+//! Violations (non-enum, fields, missing case, collisions, bad prefix, bad
+//! extra) are compile errors.
+//!
+//! # Extra methods
+//!
+//! Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
+//! `rename` becomes `const fn name(&self) -> &'static str`.
+//!
+//! On a variant, that string is the variant's value. On the enum, that string
+//! is the default for variants that omit the key. If the enum does not set a
+//! default, omitted variants use `as_str()` / `label()` (including `rename`).
+//! `name()` on the enum is the same as `name = ""`.
+//!
+//! ```
+//! use cognomen::Cognomen;
+//!
+//! #[derive(Cognomen)]
+//! #[cognomen(lower)]
+//! enum SourceKind {
+//!     #[cognomen(blurb = "microphone / input device")]
+//!     Mic,
+//!     #[cognomen(blurb = "system-wide loopback")]
+//!     System,
+//!     App,
+//! }
+//!
+//! assert_eq!(SourceKind::Mic.as_str(), "mic");
+//! assert_eq!(SourceKind::Mic.blurb(), "microphone / input device");
+//! assert_eq!(SourceKind::App.blurb(), "app");
+//! ```
+//!
+//! An enum-level default overrides `as_str()` for omitted variants:
+//!
+//! ```
+//! use cognomen::Cognomen;
+//!
+//! #[derive(Cognomen)]
+//! #[cognomen(lower, blurb = "", hint = "n/a")]
+//! enum SourceKind {
+//!     #[cognomen(blurb = "microphone / input device", hint = "CoreAudio input")]
+//!     Mic,
+//!     App,
+//! }
+//!
+//! assert_eq!(SourceKind::Mic.blurb(), "microphone / input device");
+//! assert_eq!(SourceKind::App.blurb(), "");
+//! assert_eq!(SourceKind::Mic.hint(), "CoreAudio input");
+//! assert_eq!(SourceKind::App.hint(), "n/a");
+//! ```
+//!
+//! Several extras can coexist. They are not accepted by `from_label`,
+//! `Display`, or serde. Names that collide with generated items (`label`,
+//! `as_str`, `{prefix}_{case}`, ...) are compile errors.
 //!
 //! # Generated API
 //!
@@ -85,6 +138,8 @@
 //!
 //! - `label()` / `as_str()` -> `&'static str` (default case, or `rename`)
 //! - `label_snake()`, `label_kebab()`, ...
+//! - `{name}()` for each extra (`blurb()`, `hint()`, ...); omitted variants
+//!   use `as_str()` unless the enum sets a default
 //! - `E::VARIANTS: &'static [E]` and `E::LABELS: &'static [&'static str]`
 //! - `Display`, `AsRef<str>`, `PartialEq<str>` / `PartialEq<&str>`
 //! - `TryFrom<&str>`, `FromStr`, `E::from_label`
@@ -211,6 +266,39 @@ mod tests {
     enum Mode {
         SingleProcess,
         MultiProcess,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(lower)]
+    enum Kind {
+        #[cognomen(blurb = "microphone / input device")]
+        Mic,
+        #[cognomen(blurb = "system-wide loopback", hint = "loopback")]
+        System,
+        App,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(lower, blurb = "", hint = "")]
+    enum KindEmpty {
+        #[cognomen(blurb = "microphone / input device")]
+        Mic,
+        App,
+    }
+
+    #[test]
+    fn extra_methods() {
+        assert_eq!(Kind::Mic.as_str(), "mic");
+        assert_eq!(Kind::Mic.blurb(), "microphone / input device");
+        assert_eq!(Kind::System.blurb(), "system-wide loopback");
+        assert_eq!(Kind::App.blurb(), "app");
+        assert_eq!(Kind::Mic.hint(), "mic");
+        assert_eq!(Kind::System.hint(), "loopback");
+        assert_eq!(Kind::App.hint(), "app");
+        assert_eq!(KindEmpty::Mic.blurb(), "microphone / input device");
+        assert_eq!(KindEmpty::App.blurb(), "");
+        assert_eq!(KindEmpty::Mic.hint(), "");
+        assert_eq!(KindEmpty::App.hint(), "");
     }
 
     #[test]
