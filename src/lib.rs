@@ -53,6 +53,7 @@
 //!   (must be a non-empty ASCII identifier; default `label`).
 //! - `crate = ::other::cognomen`: path used in generated code when this crate
 //!   is re-exported under another name.
+//!
 //! **Variant** (optional): `#[cognomen(rename = "io_error")]`
 //!
 //! Sets the default label to that exact string and accepts it when parsing.
