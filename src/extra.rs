@@ -13,31 +13,70 @@ pub trait Extra<K: ?Sized> {
     fn extra(&self) -> Formatted<'_>;
 }
 
-macro_rules! define_extra {
-    ($trait:ident, $key:ident, $method:ident) => {
-        #[doc = concat!("Key type for [`", stringify!($trait), "`].")]
-        pub enum $key {}
+/// Key type for [`Reason`].
+pub enum ReasonKey {}
 
-        #[doc = concat!(
-            "Extra `", stringify!($method), "`. Import to call `e.",
-            stringify!($method), "()`. A user inherent `fn ",
-            stringify!($method), "` still compiles; use UFCS."
-        )]
-        pub trait $trait {
-            #[doc = concat!("Extra `", stringify!($method), "`, always [`Formatted`].")]
-            fn $method(&self) -> Formatted<'_>;
-        }
-
-        impl<T: Extra<$key> + ?Sized> $trait for T {
-            #[inline]
-            fn $method(&self) -> Formatted<'_> {
-                Extra::<$key>::extra(self)
-            }
-        }
-    };
+/// Extra `reason`. Import to call `e.reason()`. A user inherent `fn reason`
+/// still compiles; use UFCS.
+pub trait Reason {
+    /// Extra `reason`, always [`Formatted`].
+    fn reason(&self) -> Formatted<'_>;
 }
 
-define_extra!(Reason, ReasonKey, reason);
-define_extra!(Blurb, BlurbKey, blurb);
-define_extra!(Hint, HintKey, hint);
-define_extra!(Help, HelpKey, help);
+impl<T: Extra<ReasonKey> + ?Sized> Reason for T {
+    #[inline]
+    fn reason(&self) -> Formatted<'_> {
+        Extra::<ReasonKey>::extra(self)
+    }
+}
+
+/// Key type for [`Blurb`].
+pub enum BlurbKey {}
+
+/// Extra `blurb`. Import to call `e.blurb()`. A user inherent `fn blurb`
+/// still compiles; use UFCS.
+pub trait Blurb {
+    /// Extra `blurb`, always [`Formatted`].
+    fn blurb(&self) -> Formatted<'_>;
+}
+
+impl<T: Extra<BlurbKey> + ?Sized> Blurb for T {
+    #[inline]
+    fn blurb(&self) -> Formatted<'_> {
+        Extra::<BlurbKey>::extra(self)
+    }
+}
+
+/// Key type for [`Hint`].
+pub enum HintKey {}
+
+/// Extra `hint`. Import to call `e.hint()`. A user inherent `fn hint`
+/// still compiles; use UFCS.
+pub trait Hint {
+    /// Extra `hint`, always [`Formatted`].
+    fn hint(&self) -> Formatted<'_>;
+}
+
+impl<T: Extra<HintKey> + ?Sized> Hint for T {
+    #[inline]
+    fn hint(&self) -> Formatted<'_> {
+        Extra::<HintKey>::extra(self)
+    }
+}
+
+/// Key type for [`Help`].
+pub enum HelpKey {}
+
+/// Extra `help`. Import to call `e.help()`. A user inherent `fn help`
+/// still compiles; use UFCS.
+pub trait Help {
+    /// Extra `help`, always [`Formatted`].
+    fn help(&self) -> Formatted<'_>;
+}
+
+impl<T: Extra<HelpKey> + ?Sized> Help for T {
+    #[inline]
+    fn help(&self) -> Formatted<'_> {
+        Extra::<HelpKey>::extra(self)
+    }
+}
