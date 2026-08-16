@@ -165,7 +165,7 @@
 //! # `no_std`
 //!
 //! ```toml
-//! cognomen = { version = "0.3", default-features = false }
+//! cognomen = { version = "0.4", default-features = false }
 //! ```
 //!
 //! Labels, parse, `AsRef`, and [`Variants`] use only `core`. Add
