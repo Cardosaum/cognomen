@@ -240,7 +240,7 @@
 //! # `no_std`
 //!
 //! ```toml
-//! cognomen = { version = "0.4", default-features = false }
+//! cognomen = { version = "0.5", default-features = false }
 //! ```
 //!
 //! Labels, extras ([`Formatted`]), parse, `AsRef`, and [`Variants`] use only

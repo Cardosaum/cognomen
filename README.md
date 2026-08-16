@@ -19,7 +19,7 @@ Full API reference: <https://docs.rs/cognomen>
 
 ```toml
 [dependencies]
-cognomen = "0.4"
+cognomen = "0.5"
 ```
 
 ```rust
@@ -226,7 +226,7 @@ trait the same way.
 `no_std`, including embedded:
 
 ```toml
-cognomen = { version = "0.4", default-features = false }
+cognomen = { version = "0.5", default-features = false }
 ```
 
 Labels, extras (`Formatted`), parse, `AsRef`, and `Variants` use only `core`.
