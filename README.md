@@ -11,6 +11,10 @@ Downstream crates use it as the seam between a Rust ident and the string a
 config file, log line, CLI flag, or wire protocol actually carries. Case
 conversion runs at compile time and is emitted as a `&'static str`.
 
+Labels and extras are trait items (`Label`, `Reason`, `Blurb`, ...), not
+inherent methods on `E`. Import the trait to call `e.reason()`, or use UFCS
+when a user `fn` or parent trait owns the same name.
+
 Full API reference: <https://docs.rs/cognomen>
 
 ```toml
@@ -19,7 +23,7 @@ cognomen = "0.4"
 ```
 
 ```rust
-use cognomen::{Cognomen, Variants};
+use cognomen::{Case, Cognomen, Label, Variants};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 #[cognomen(snake_case, kebab-case)]
@@ -30,14 +34,14 @@ enum Mode {
 
 assert_eq!(Mode::SingleProcess.label(), "single_process");
 assert_eq!(Mode::MultiProcess.as_str(), "multi_process");
-assert_eq!(Mode::SingleProcess.label_kebab(), "single-process");
+assert_eq!(Mode::SingleProcess.in_case(Case::Kebab), "single-process");
 assert_eq!(Mode::try_from("single-process"), Ok(Mode::SingleProcess));
 assert!(Mode::SingleProcess == "single-process");
 assert_eq!(Mode::VARIANTS.len(), 2);
 ```
 
 The first case in `#[cognomen(...)]` is the default (`label()` / `as_str()` /
-serde out). Every listed case also gets `{prefix}_{case}`.
+serde out). `PartialEq<str>` on `E` compares the **label**, not an extra.
 
 ## Case styles
 
@@ -56,17 +60,21 @@ serde out). Every listed case also gets `{prefix}_{case}`.
 
 **Container** (required): `#[cognomen(<case>, ...)]`
 
-- One or more cases, comma-separated. First is the default.
-- `prefix = "cfg"`: accessors become `cfg_snake`, `cfg_kebab`, ...
-  (non-empty ASCII identifier; default `label`).
+- One or more cases, comma-separated. First is the default. Listed cases
+  are accepted by parse / serde-in; `Label::in_case` can still produce any
+  `Case`.
+- `prefix = "cfg"`: accepted for compatibility; case accessors live on
+  `Label`.
 - `crate = ::other::cognomen`: generated path when you re-export this crate.
 
 **Variant** (optional): `#[cognomen(rename = "io_error")]`
 
 Sets the default label to that exact string and accepts it when parsing.
-Other case accessors still convert from the ident.
+`Label::in_case` still converts from the ident.
 
 ```rust
+use cognomen::{Case, Cognomen, FromLabel, Label};
+
 #[derive(Cognomen)]
 #[cognomen(snake_case, kebab-case)]
 enum Wire {
@@ -76,33 +84,33 @@ enum Wire {
 }
 
 assert_eq!(Wire::IoFailed.label(), "io_error");
-assert_eq!(Wire::IoFailed.label_snake(), "io_failed");
+assert_eq!(Wire::IoFailed.in_case(Case::Snake), "io_failed");
 assert_eq!(Wire::from_label("io_error").unwrap(), Wire::IoFailed);
 ```
 
-Any other `name = "..."` is an [extra method](#extra-methods).
+Any other `name = "..."` is an [extra](#extras).
 
 Violations (non-enum, missing case, collisions, bad prefix, bad extra, unknown
 `{field}` placeholder) are compile errors, pinned by trybuild tests under
 `tests/ui/`.
 
-## Extra methods
+## Extras
 
 Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
-`rename` becomes an extra method.
+`rename` is an extra. Known keys (`reason`, `blurb`, `hint`, `help`)
+implement a trait in this crate. Import it to call `e.reason()`.
 
 On a variant, that string is the variant's value. On the enum, that string
 is the default for variants that omit the key. If the enum does not set a
 default, omitted variants use `as_str()` / `label()` (including `rename`).
 `name()` on the enum is the same as `name = ""`.
 
-`{field}` in a **variant** extra interpolates that named (or tuple-index)
-payload. The method then returns `Formatted` instead of `&'static str`.
-Enum-level defaults cannot contain placeholders. Write `{` / `}` as `{{` /
-`}}`.
+Every extra returns `Formatted`. Static text is a single literal; `{field}`
+on a **variant** extra appends that named (or tuple-index) payload. Adding a
+placeholder does not change the signature. Write `{` / `}` as `{{` / `}}`.
 
 ```rust
-use cognomen::Cognomen;
+use cognomen::{Blurb, Cognomen, Label};
 
 #[derive(Cognomen)]
 #[cognomen(lower)]
@@ -122,7 +130,7 @@ assert_eq!(SourceKind::App.blurb(), "app");
 An enum-level default overrides `as_str()` for omitted variants:
 
 ```rust
-use cognomen::Cognomen;
+use cognomen::{Blurb, Cognomen, Hint};
 
 #[derive(Cognomen)]
 #[cognomen(lower, blurb = "", hint = "n/a")]
@@ -138,11 +146,11 @@ assert_eq!(SourceKind::Mic.hint(), "CoreAudio input");
 assert_eq!(SourceKind::App.hint(), "n/a");
 ```
 
-Fielded variants keep `label()` / `as_str()`. Parse, `Variants`, and serde
-are omitted. Interpolate extras from the fields:
+Fielded variants keep `Label`. Parse, `Variants`, and serde-in are omitted.
+Interpolate extras from the fields:
 
 ```rust
-use cognomen::Cognomen;
+use cognomen::{Cognomen, Label, Reason};
 
 #[derive(Cognomen)]
 #[cognomen(snake_case)]
@@ -158,24 +166,53 @@ assert_eq!(e.as_str(), "open_failed");
 assert_eq!(e.reason(), "host open failed busy");
 ```
 
-Several extras can coexist. They are not accepted by `from_label` or
-serde. Names that collide with generated items (`label`, `as_str`,
-`{prefix}_{case}`, ...) are compile errors.
+A unit extra and a fielded extra with the same key share one trait and one
+return type. A user inherent `fn reason` still compiles:
+
+```rust
+use cognomen::{Cognomen, Formatted, Reason};
+
+#[derive(Cognomen)]
+#[cognomen(snake_case)]
+enum Kind {
+    #[cognomen(reason = "not implemented")]
+    Unimplemented,
+}
+
+impl Kind {
+    fn reason(&self) -> u8 {
+        0
+    }
+}
+
+fn sentence(e: &impl Reason) -> Formatted<'_> {
+    e.reason()
+}
+
+assert!(sentence(&Kind::Unimplemented) == "not implemented");
+assert_eq!(<Kind as Reason>::reason(&Kind::Unimplemented), "not implemented");
+```
+
+Several extras can coexist. They are not accepted by `FromLabel` or serde.
+Names that collide with generated items (`label`, `as_str`, ...) are compile
+errors.
 
 ## Generated API
 
-For `#[cognomen(snake_case, kebab-case)]` on `E`:
+For `#[cognomen(snake_case, kebab-case)]` on `E`. Nothing is inherent on `E`.
 
 | item | notes |
 |------|--------|
-| `label()` / `as_str()` | default case, or `rename` |
-| `label_snake()`, `label_kebab()`, ... | one method per declared case |
-| `{name}()` | each extra; `as_str()` if omitted, unless the enum sets a default. `{field}` interpolation returns `Formatted` |
-| `Variants` | `E::VARIANTS` / `E::LABELS` after `use cognomen::Variants` (non-generic, fieldless). Trait items, so they cannot clash |
-| `AsRef<str>`, `PartialEq<str>` | compare against any declared label |
-| `TryFrom<&str>`, `FromStr`, `from_label` | fieldless enums; uses `core` |
+| `Label` | `label()` / `as_str()` (default or `rename`); `in_case(Case)` |
+| `Reason` / `Blurb` / `Hint` / `Help` / `Extra` | extras; always `Formatted` |
+| `Variants` | `E::VARIANTS` / `E::LABELS` after `use cognomen::Variants` (non-generic, fieldless) |
+| `AsRef<str>`, `PartialEq<str>` | compare against any declared **label** |
+| `TryFrom<&str>`, `FromStr`, `FromLabel` | fieldless enums; uses `core` |
 | `Serialize` / `Deserialize` | feature `serde`, fieldless; out is `label()`, in accepts any declared case |
 | `T::value_parser()` | feature `clap`; import `cognomen::clap::ArgType` in the binary |
+
+`numbered` still has inherent `number()`; a follow-up should move that onto a
+trait the same way.
 
 ## Features
 
@@ -192,8 +229,8 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 cognomen = { version = "0.4", default-features = false }
 ```
 
-Labels, parse, `AsRef`, and `Variants` use only `core`. Add
-`features = ["alloc"]` to keep the unmatched string on parse errors. Add
+Labels, extras (`Formatted`), parse, `AsRef`, and `Variants` use only `core`.
+Add `features = ["alloc"]` to keep the unmatched string on parse errors. Add
 `features = ["serde"]` for wire formats. Enable `clap` in the binary that
 owns the CLI, not in a `no_std` kernel:
 

@@ -1,4 +1,4 @@
-use cognomen::Cognomen;
+use cognomen::{Case, Cognomen, FromLabel, Label};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 #[cognomen(snake_case, kebab-case)]
@@ -11,8 +11,8 @@ enum Wire {
 fn main() {
     assert_eq!(Wire::IoFailed.label(), "io_error");
     assert_eq!(Wire::IoFailed.as_str(), "io_error");
-    assert_eq!(Wire::IoFailed.label_snake(), "io_failed");
-    assert_eq!(Wire::IoFailed.label_kebab(), "io-failed");
+    assert_eq!(Wire::IoFailed.in_case(Case::Snake), "io_failed");
+    assert_eq!(Wire::IoFailed.in_case(Case::Kebab), "io-failed");
     assert_eq!(Wire::OpenFailed.label(), "open_failed");
 
     assert_eq!(Wire::from_label("io_error").unwrap(), Wire::IoFailed);

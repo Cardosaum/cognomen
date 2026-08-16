@@ -1,4 +1,4 @@
-use cognomen::Cognomen;
+use cognomen::{Cognomen, Label};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 #[cognomen(snake_case)]

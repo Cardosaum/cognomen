@@ -1,6 +1,6 @@
-use cognomen::Cognomen;
+use cognomen::{Case, Cognomen, Label};
 
-// Custom prefix changes the accessor method names.
+// prefix is accepted; case accessors live on Label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 #[cognomen(snake_case, kebab-case, prefix = "my_label")]
 enum Transport {
@@ -8,7 +8,6 @@ enum Transport {
     UnixSocket,
 }
 
-// Prefix works with a single case style too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 #[cognomen(snake_case, prefix = "cfg")]
 enum Feature {
@@ -17,25 +16,18 @@ enum Feature {
 }
 
 fn main() {
-    // Label values are unchanged: prefix only affects accessor names.
     assert_eq!(Transport::WebSocket.label(), "web_socket");
     assert_eq!(Transport::UnixSocket.label(), "unix_socket");
+    assert_eq!(Transport::WebSocket.in_case(Case::Snake), "web_socket");
+    assert_eq!(Transport::UnixSocket.in_case(Case::Kebab), "unix-socket");
 
-    // Per-case accessors use the custom prefix.
-    assert_eq!(Transport::WebSocket.my_label_snake(), "web_socket");
-    assert_eq!(Transport::UnixSocket.my_label_kebab(), "unix-socket");
-
-    // Reverse path works with the same label values.
     assert_eq!(Transport::try_from("web_socket"), Ok(Transport::WebSocket));
     assert_eq!("web_socket".parse::<Transport>(), Ok(Transport::WebSocket));
-
     assert!(Transport::try_from("nope").is_err());
 
-    // Single-case prefix works.
     assert_eq!(Feature::EnableLogging.label(), "enable_logging");
-    assert_eq!(Feature::EnableTracing.cfg_snake(), "enable_tracing");
+    assert_eq!(Feature::EnableTracing.in_case(Case::Snake), "enable_tracing");
 
-    // Reverse path for single-case prefix.
     assert_eq!(Feature::try_from("enable_logging"), Ok(Feature::EnableLogging));
     assert!(Feature::try_from("nope").is_err());
 }

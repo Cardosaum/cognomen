@@ -1,4 +1,4 @@
-use cognomen::Cognomen;
+use cognomen::{Blurb, Case, Cognomen, FromLabel, Help, Hint, Label};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 #[cognomen(lower, blurb = "")]
@@ -47,7 +47,10 @@ fn main() {
     assert_eq!(Wire::IoFailed.hint(), "check the device");
     assert_eq!(Wire::OpenFailed.hint(), "use default");
 
-    assert_eq!(Feature::EnableLogging.cfg_snake(), "enable_logging");
+    assert_eq!(
+        Feature::EnableLogging.in_case(Case::Snake),
+        "enable_logging"
+    );
     assert_eq!(Feature::EnableLogging.help(), "write logs to stderr");
     assert_eq!(Feature::EnableTracing.help(), "enable_tracing");
 

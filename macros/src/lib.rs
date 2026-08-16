@@ -13,14 +13,14 @@ use proc_macro::TokenStream;
 ///
 /// ```ignore
 /// #[derive(Cognomen)]
-/// #[cognomen(snake_case, kebab-case, prefix = "label", crate = ::cognomen)]
+/// #[cognomen(snake_case, kebab-case, crate = ::cognomen)]
 /// enum Mode { SingleProcess }
 /// ```
 ///
 /// - One or more case styles (required). The **first** is the default used by
-///   `label()`, `as_str()`, and serde serialization.
-/// - `prefix = "..."`: stem for per-case methods (`label_snake`, ...). Must be
-///   a non-empty ASCII identifier. Default: `label`.
+///   [`cognomen::Label`], and serde serialization.
+/// - `prefix = "..."`: accepted for compatibility; case accessors live on
+///   [`cognomen::Label`].
 /// - `crate = ::path`: crate path emitted in generated code. Default:
 ///   `::cognomen`. Set this when you re-export cognomen from another crate.
 ///
@@ -32,13 +32,13 @@ use proc_macro::TokenStream;
 /// ```
 ///
 /// Overrides the default label with that exact string and accepts it when
-/// parsing. `label_snake()` and friends still convert from the ident.
+/// parsing. [`cognomen::Label::in_case`] still converts from the ident.
 ///
-/// # Extra methods
+/// # Extras
 ///
-/// Any other `name = "..."` becomes an extra method (`const fn` returning
-/// `&'static str`, or [`cognomen::Formatted`] when a variant interpolates
-/// `{field}`).
+/// Any other `name = "..."` is an extra. Known keys implement a trait in
+/// `cognomen` (`Reason`, `Blurb`, `Hint`, `Help`). Every extra returns
+/// [`cognomen::Formatted`].
 ///
 /// ```ignore
 /// #[derive(Cognomen)]
@@ -52,23 +52,22 @@ use proc_macro::TokenStream;
 ///
 /// On the enum, `name = "..."` is the default for omitted variants.
 /// `name()` means `name = ""`. If the enum does not set a default, omitted
-/// variants use `as_str()` / `label()`. Extra methods are not used for
-/// parse or serde.
+/// variants use `as_str()` / `label()`. Extras are not used for parse or
+/// serde.
 ///
 /// # Generated items
 ///
-/// - `const fn label(&self) -> &'static str`
-/// - `const fn as_str(&self) -> &'static str`
-/// - `const fn {prefix}_{case}(&self) -> &'static str` for each declared case
-/// - `{name}(&self)` for each extra (`&'static str`, or `Formatted` when
-///   interpolating)
-/// - `cognomen::Variants` (non-generic, fieldless enums): `VARIANTS` / `LABELS`
-/// - `AsRef<str>`, `PartialEq<str>`
-/// - `TryFrom<&str>`, `FromStr`, `from_label` (fieldless enums)
+/// All of these are trait impls. Nothing is inherent on `E`.
+///
+/// - `cognomen::Label`: `label` / `as_str` / `in_case`
+/// - `cognomen::Reason` / `Blurb` / `Hint` / `Help` / `Extra`: extras
+/// - `cognomen::Variants` (non-generic, fieldless): `VARIANTS` / `LABELS`
+/// - `AsRef<str>`, `PartialEq<str>` (compares the label)
+/// - `TryFrom<&str>`, `FromStr`, `cognomen::FromLabel` (fieldless enums)
 /// - `Serialize` / `Deserialize` (feature `serde`; fieldless enums)
 ///
 /// See the [`cognomen`](https://docs.rs/cognomen) crate docs for case styles,
-/// extra methods, features, and `no_std`.
+/// extras, features, and `no_std`.
 #[proc_macro_derive(Cognomen, attributes(cognomen))]
 pub fn derive_cognomen(input: TokenStream) -> TokenStream {
     cognomen::derive(input.into())

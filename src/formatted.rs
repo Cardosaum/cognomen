@@ -1,4 +1,4 @@
-//! Interpolated extra strings (`reason()`, …) for fielded variants.
+//! Extra strings (`Reason::reason`, ...). Always this type, never `&'static str`.
 
 use core::fmt::{self, Write};
 
@@ -10,16 +10,17 @@ enum Piece<'a> {
     Arg(&'a dyn fmt::Display),
 }
 
-/// Display of an extra method that filled `{field}` placeholders.
+/// Extra text: one or more literal pieces plus borrowed field args.
 ///
-/// Returned by `reason()` (or any other extra) when at least one variant
-/// interpolates a payload. Static extras still return `&'static str`.
+/// Every extra returns this type. Static text is a single literal; `{field}`
+/// interpolation appends args. Adding a placeholder does not change the
+/// method signature.
 ///
 /// Comparison writes the same text as [`Display`] and does not allocate:
 /// `e.reason() == "host open failed busy"`.
 ///
 /// ```
-/// use cognomen::Cognomen;
+/// use cognomen::{Cognomen, Reason};
 ///
 /// #[derive(Cognomen)]
 /// #[cognomen(snake_case)]

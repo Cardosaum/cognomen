@@ -1,4 +1,4 @@
-use cognomen::{Cognomen, Variants};
+use cognomen::{Cognomen, FromLabel, Label, Variants};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 #[cognomen(lower, crate = ::cognomen)]

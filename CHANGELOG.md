@@ -9,14 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- fielded variants: `label()` / `as_str()` ignore the payload; `{field}` in a
-  variant extra interpolates and the method returns `Formatted`
+- fielded variants: `Label` ignores the payload; `{field}` in a variant extra
+  interpolates into `Formatted`
 - tuple-index placeholders (`{0}`) and `{{` / `}}` escapes in extras
+- `Label`, `FromLabel`, `Extra<K>`, and named extra traits (`Reason`,
+  `Blurb`, `Hint`, `Help`) in this crate
 
 ### Changed
 
-- parse, `Variants`, and serde are omitted when any variant has a payload
+- parse, `Variants`, and serde-in are omitted when any variant has a payload
   (a label cannot reconstruct fields)
+- extras always return `Formatted` (static text is one literal). Adding
+  `{field}` does not change the signature
+- labels and extras are trait items, not inherent methods on `E`. Import
+  `Label` / `Reason` / ... or use UFCS. `prefix` no longer names methods;
+  use `Label::in_case`
+- `from_label` lives on `FromLabel` (fieldless only)
+
+### Notes
+
+- `numbered` still has inherent `number()`; a follow-up should move that
+  onto a trait the same way
 
 ## [0.4.0](https://github.com/Cardosaum/cognomen/releases/tag/cognomen-v0.4.0) - 2026-08-16
 

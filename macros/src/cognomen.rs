@@ -36,6 +36,7 @@ impl CaseStyle {
         })
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     fn name(self) -> &'static str {
         match self {
             Self::Snake => "snake_case",
@@ -43,19 +44,6 @@ impl CaseStyle {
             Self::Camel => "camelCase",
             Self::Pascal => "PascalCase",
             Self::ScreamingSnake => "SCREAMING_SNAKE_CASE",
-            Self::Lower => "lower",
-            Self::Upper => "upper",
-            Self::Title => "title",
-        }
-    }
-
-    fn suffix(self) -> &'static str {
-        match self {
-            Self::Snake => "snake",
-            Self::Kebab => "kebab",
-            Self::Camel => "camel",
-            Self::Pascal => "pascal",
-            Self::ScreamingSnake => "screaming_snake",
             Self::Lower => "lower",
             Self::Upper => "upper",
             Self::Title => "title",
@@ -91,6 +79,8 @@ impl CaseStyle {
 /// Extra methods: any `name = "..."` (or `name()`) besides reserved keys.
 struct CognomenAttr {
     styles: Vec<CaseStyle>,
+    /// Accepted for compatibility; case accessors live on `Label`.
+    #[allow(dead_code)]
     prefix: String,
     crate_path: syn::Path,
     extras: Vec<(String, ExtraDecl)>,
@@ -193,30 +183,54 @@ fn insert_extra(
     Ok(())
 }
 
-fn reserved_idents(prefix: &str, styles: &[CaseStyle]) -> Vec<String> {
-    let mut out = vec![
-        String::from("label"),
-        String::from("as_str"),
-        String::from("from_label"),
-        String::from("VARIANTS"),
-        String::from("LABELS"),
-        String::from("eq"),
-        String::from("ne"),
-        String::from("fmt"),
-        String::from("as_ref"),
-        String::from("try_from"),
-        String::from("from_str"),
-        String::from("serialize"),
-        String::from("deserialize"),
-    ];
-    for style in styles {
-        out.push(format!("{}_{}", prefix, style.suffix()));
+const ALL_STYLES: [CaseStyle; 8] = [
+    CaseStyle::Snake,
+    CaseStyle::Kebab,
+    CaseStyle::Camel,
+    CaseStyle::Pascal,
+    CaseStyle::ScreamingSnake,
+    CaseStyle::Lower,
+    CaseStyle::Upper,
+    CaseStyle::Title,
+];
+
+impl CaseStyle {
+    fn case_path(self, crate_path: &syn::Path) -> TokenStream {
+        match self {
+            Self::Snake => quote! { #crate_path::Case::Snake },
+            Self::Kebab => quote! { #crate_path::Case::Kebab },
+            Self::Camel => quote! { #crate_path::Case::Camel },
+            Self::Pascal => quote! { #crate_path::Case::Pascal },
+            Self::ScreamingSnake => quote! { #crate_path::Case::ScreamingSnake },
+            Self::Lower => quote! { #crate_path::Case::Lower },
+            Self::Upper => quote! { #crate_path::Case::Upper },
+            Self::Title => quote! { #crate_path::Case::Title },
+        }
     }
-    out
 }
 
-fn check_extras(prefix: &str, styles: &[CaseStyle], extras: &[(String, ExtraDecl)]) -> Result<()> {
-    let reserved = reserved_idents(prefix, styles);
+fn reserved_idents() -> [&'static str; 15] {
+    [
+        "label",
+        "as_str",
+        "in_case",
+        "from_label",
+        "extra",
+        "VARIANTS",
+        "LABELS",
+        "eq",
+        "ne",
+        "fmt",
+        "as_ref",
+        "try_from",
+        "from_str",
+        "serialize",
+        "deserialize",
+    ]
+}
+
+fn check_extras(extras: &[(String, ExtraDecl)]) -> Result<()> {
+    let reserved = reserved_idents();
     for (name, decl) in extras {
         if syn::parse_str::<Ident>(name).is_err() {
             return Err(syn::Error::new(
@@ -798,70 +812,46 @@ fn reverse_eq_arms(
     Ok((reverse_arms, eq_arms, owner.into_keys().collect()))
 }
 
-fn extra_method(
-    name: &str,
+fn extra_key_ty(name: &str, crate_path: &syn::Path) -> Option<TokenStream> {
+    let key = match name {
+        "reason" => quote! { ReasonKey },
+        "blurb" => quote! { BlurbKey },
+        "hint" => quote! { HintKey },
+        "help" => quote! { HelpKey },
+        _ => return None,
+    };
+    Some(quote! { #crate_path::#key })
+}
+
+fn extra_arms(
+    extra_name: &str,
     decl: &ExtraDecl,
     variants: &[Variant<'_>],
     default: CaseStyle,
     crate_path: &syn::Path,
-) -> Result<TokenStream> {
-    let method = format_ident!("{name}");
-    let interpolates = variants.iter().any(|v| {
-        v.extras.get(name).is_some_and(|lit| {
-            parse_template(&lit.value(), lit.span()).is_ok_and(|s| s.iter().any(Segment::is_field))
+) -> Result<Vec<TokenStream>> {
+    variants
+        .iter()
+        .map(|v| {
+            let text = v.extra_text(extra_name, decl, default);
+            let span = v
+                .extras
+                .get(extra_name)
+                .map(syn::LitStr::span)
+                .unwrap_or_else(|| v.ident.span());
+            let segments = parse_template(&text, span)?;
+            let needed: Vec<String> = segments
+                .iter()
+                .filter_map(|seg| match seg {
+                    Segment::Field(f) => Some(f.clone()),
+                    Segment::Lit(_) => None,
+                })
+                .collect();
+            let pat = v.bind_pat(&needed);
+            let args = v.formatted_expr(&text, span, crate_path)?;
+            Ok(quote! { #pat => #args })
         })
-    });
-
-    if interpolates {
-        let doc = format!(
-            "Extra string for this variant (`{name}`), with `{{field}}` placeholders filled from the payload."
-        );
-        let arms = variants
-            .iter()
-            .map(|v| {
-                let text = v.extra_text(name, decl, default);
-                let span = v
-                    .extras
-                    .get(name)
-                    .map(syn::LitStr::span)
-                    .unwrap_or_else(|| v.ident.span());
-                let segments = parse_template(&text, span)?;
-                let needed: Vec<String> = segments
-                    .iter()
-                    .filter_map(|seg| match seg {
-                        Segment::Field(f) => Some(f.clone()),
-                        Segment::Lit(_) => None,
-                    })
-                    .collect();
-                let pat = v.bind_pat(&needed);
-                let args = v.formatted_expr(&text, span, crate_path)?;
-                Ok(quote! { #pat => #args })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(quote! {
-            #[doc = #doc]
-            #[inline]
-            #[must_use]
-            pub fn #method(&self) -> #crate_path::Formatted<'_> {
-                match self { #(#arms,)* }
-            }
-        })
-    } else {
-        let doc = format!("Extra string for this variant (`{name}`).");
-        let arms = variants.iter().map(|v| {
-            let pat = v.ignore_pat();
-            let text = v.extra_text(name, decl, default);
-            quote! { #pat => #text }
-        });
-        Ok(quote! {
-            #[doc = #doc]
-            #[inline]
-            #[must_use]
-            pub const fn #method(&self) -> &'static str {
-                match self { #(#arms,)* }
-            }
-        })
-    }
+        .collect()
 }
 
 pub fn derive(input: TokenStream) -> Result<TokenStream> {
@@ -880,36 +870,41 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
 
     let mut extras = attr.extras;
     let variants = enum_variants(&input, &mut extras)?;
-    check_extras(&attr.prefix, &attr.styles, &extras)?;
+    check_extras(&extras)?;
     let crate_path = &attr.crate_path;
     let default = attr.styles[0];
     let fieldless = variants.iter().all(|v| !v.fields.has_payload());
     let default_labels: Vec<String> = variants.iter().map(|v| v.default_label(default)).collect();
 
-    let case_methods = attr.styles.iter().map(|style| {
-        let method = format_ident!("{}_{}", attr.prefix, style.suffix());
-        let doc = format!(
-            "Stable label for this variant in the `{}` case.",
-            style.name()
-        );
-        let arms = variants.iter().map(|v| {
-            let pat = v.ignore_pat();
-            let label = v.case_label(*style);
-            quote! { #pat => #label }
-        });
-        quote! {
-            #[doc = #doc]
-            #[inline]
-            #[must_use]
-            pub const fn #method(&self) -> &'static str {
-                match self { #(#arms,)* }
-            }
-        }
-    });
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let extra_methods = extras
+    let extra_impls = extras
         .iter()
-        .map(|(name, decl)| extra_method(name, decl, &variants, default, crate_path))
+        .map(|(extra_name, decl)| {
+            let arms = extra_arms(extra_name, decl, &variants, default, crate_path)?;
+            let body = quote! {
+                #[inline]
+                fn extra(&self) -> #crate_path::Formatted<'_> {
+                    match self { #(#arms,)* }
+                }
+            };
+            Ok(if let Some(key) = extra_key_ty(extra_name, crate_path) {
+                quote! {
+                    impl #impl_generics #crate_path::Extra<#key> for #name #ty_generics #where_clause {
+                        #body
+                    }
+                }
+            } else {
+                quote! {
+                    const _: () = {
+                        enum __CognomenExtraKey {}
+                        impl #impl_generics #crate_path::Extra<__CognomenExtraKey> for #name #ty_generics #where_clause {
+                            #body
+                        }
+                    };
+                }
+            })
+        })
         .collect::<Result<Vec<_>>>()?;
 
     let label_arms = variants
@@ -920,8 +915,21 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             quote! { #pat => #label }
         });
 
+    let in_case_arms = variants.iter().map(|v| {
+        let pat = v.ignore_pat();
+        let case_arms = ALL_STYLES.iter().map(|style| {
+            let case = style.case_path(crate_path);
+            let label = v.case_label(*style);
+            quote! { #case => #label }
+        });
+        quote! {
+            #pat => match case {
+                #(#case_arms,)*
+            }
+        }
+    });
+
     let (reverse_arms, eq_arms, all_labels) = reverse_eq_arms(name, &variants, &attr.styles)?;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let variants_impl = (fieldless && input.generics.params.is_empty()).then(|| {
         let idents: Vec<&Ident> = variants.iter().map(|v| v.ident).collect();
@@ -934,12 +942,9 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     });
 
     let parse_impls = fieldless.then(|| quote! {
-        impl #impl_generics #name #ty_generics #where_clause {
-            /// Parse any declared-case label, or a variant `rename`, into `Self`.
-            ///
-            /// Equivalent to [`TryFrom::try_from`](core::convert::TryFrom).
+        impl #impl_generics #crate_path::FromLabel for #name #ty_generics #where_clause {
             #[inline]
-            pub fn from_label(s: &str) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
+            fn from_label(s: &str) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
                 ::core::convert::TryFrom::try_from(s)
             }
         }
@@ -980,7 +985,10 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
                     &self,
                     serializer: S,
                 ) -> ::core::result::Result<S::Ok, S::Error> {
-                    #crate_path::__serde::Serialize::serialize(self.label(), serializer)
+                    #crate_path::__serde::Serialize::serialize(
+                        #crate_path::Label::label(self),
+                        serializer,
+                    )
                 }
             }
 
@@ -1021,34 +1029,26 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     });
 
     Ok(quote! {
-        impl #impl_generics #name #ty_generics #where_clause {
-            /// Stable label for this variant in the default (first) case.
-            ///
-            /// Overridden by `#[cognomen(rename = "...")]` on the variant.
+        impl #impl_generics #crate_path::Label for #name #ty_generics #where_clause {
             #[inline]
-            #[must_use]
-            pub const fn label(&self) -> &'static str {
+            fn label(&self) -> &'static str {
                 match self { #(#label_arms,)* }
             }
 
-            /// Alias of [`Self::label`].
             #[inline]
-            #[must_use]
-            pub const fn as_str(&self) -> &'static str {
-                self.label()
+            fn in_case(&self, case: #crate_path::Case) -> &'static str {
+                match self { #(#in_case_arms,)* }
             }
-
-            #(#case_methods)*
-
-            #(#extra_methods)*
         }
+
+        #(#extra_impls)*
 
         #variants_impl
 
         impl #impl_generics ::core::convert::AsRef<str> for #name #ty_generics #where_clause {
             #[inline]
             fn as_ref(&self) -> &str {
-                self.label()
+                #crate_path::Label::label(self)
             }
         }
 
@@ -1446,6 +1446,8 @@ mod tests {
             "label",
             "as_str",
             "from_label",
+            "in_case",
+            "extra",
             "VARIANTS",
             "LABELS",
             "eq",
@@ -1456,7 +1458,6 @@ mod tests {
             "from_str",
             "serialize",
             "deserialize",
-            "label_snake",
         ] {
             let ident = format_ident!("{name}");
             assert_err(
@@ -1467,13 +1468,6 @@ mod tests {
                 "conflicts with a generated cognomen item",
             );
         }
-        assert_err(
-            quote! {
-                #[cognomen(snake_case, prefix = "cfg", cfg_snake = "")]
-                enum Mode { A }
-            },
-            "conflicts with a generated cognomen item",
-        );
         assert_err(
             quote! {
                 #[cognomen(snake_case)]
@@ -1579,8 +1573,11 @@ mod tests {
         assert!(!basic.contains("Self :: Error"));
         assert!(!basic.contains("Self :: Err"));
         assert!(basic.contains("Variants"));
-        assert!(basic.contains("label_snake"));
-        assert!(basic.contains("label_kebab"));
+        assert!(basic.contains("Label"));
+        assert!(basic.contains("in_case"));
+        assert!(basic.contains("FromLabel"));
+        assert!(!basic.contains("pub const fn label"));
+        assert!(!basic.contains("label_snake"));
 
         ok(quote! {
             #[cognomen(snake, kebab, camel, pascal, screaming, lowercase, uppercase, title_case)]

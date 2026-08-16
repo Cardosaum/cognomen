@@ -1,4 +1,4 @@
-use cognomen::Cognomen;
+use cognomen::{Cognomen, Label};
 
 #[derive(Cognomen)]
 #[cognomen(kebab-case)]
