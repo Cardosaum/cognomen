@@ -15,7 +15,7 @@ Full API reference: <https://docs.rs/cognomen>
 
 ```toml
 [dependencies]
-cognomen = "0.1"
+cognomen = "0.4"
 ```
 
 ```rust
@@ -163,7 +163,7 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`:
 `no_std`, including embedded:
 
 ```toml
-cognomen = { version = "0.3", default-features = false }
+cognomen = { version = "0.4", default-features = false }
 ```
 
 Labels, parse, `AsRef`, and `Variants` use only `core`. Add
