@@ -1,0 +1,5 @@
+error: empty `{}` placeholder; use a field name (e.g. `{cause}`)
+ --> tests/ui/fail_empty_placeholder.rs:6:25
+  |
+6 |     #[cognomen(reason = "host open failed {}")]
+  |                         ^^^^^^^^^^^^^^^^^^^^^

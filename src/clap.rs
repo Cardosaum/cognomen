@@ -45,7 +45,7 @@ use crate::Variants;
 /// [`FromStr`] (the derive emits both). The defining crate can stay
 /// `no_std`; only the clap binary enables this feature.
 pub trait ArgType: Variants + FromStr + Clone + Send + Sync + 'static {
-    /// Clap parser that accepts any `from_label` string and lists
+    /// Clap parser that accepts any [`crate::FromLabel`] string and lists
     /// [`Variants::LABELS`] in `--help`.
     fn value_parser() -> Parser<Self> {
         Parser::new()

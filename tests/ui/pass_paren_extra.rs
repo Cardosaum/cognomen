@@ -1,4 +1,4 @@
-use cognomen::Cognomen;
+use cognomen::{Blurb, Cognomen};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 #[cognomen(lower, blurb())]

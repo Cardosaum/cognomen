@@ -1,0 +1,5 @@
+error: placeholder `{cause}` is invalid on a unit variant
+ --> tests/ui/fail_placeholder_unit.rs:6:25
+  |
+6 |     #[cognomen(reason = "host open failed {cause}")]
+  |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^

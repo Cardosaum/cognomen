@@ -8,7 +8,7 @@ enum Mode {
 }
 
 const fn label_in_const() -> &'static str {
-    Mode::SingleProcess.label()
+    Mode::LABELS[0]
 }
 
 fn main() {

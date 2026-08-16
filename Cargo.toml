@@ -6,7 +6,7 @@ edition = "2021"
 # Without `clap`. That feature tracks clap's rustc floor (4.6 needs 1.85).
 rust-version = "1.71.1"
 license = "MIT OR Apache-2.0"
-description = "Derive stable, case-configured string labels for unit-like enum variants."
+description = "Derive stable, case-configured string labels for enum variants."
 repository = "https://github.com/Cardosaum/cognomen"
 homepage = "https://github.com/Cardosaum/cognomen"
 documentation = "https://docs.rs/cognomen"

@@ -36,6 +36,7 @@ impl CaseStyle {
         })
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     fn name(self) -> &'static str {
         match self {
             Self::Snake => "snake_case",
@@ -43,19 +44,6 @@ impl CaseStyle {
             Self::Camel => "camelCase",
             Self::Pascal => "PascalCase",
             Self::ScreamingSnake => "SCREAMING_SNAKE_CASE",
-            Self::Lower => "lower",
-            Self::Upper => "upper",
-            Self::Title => "title",
-        }
-    }
-
-    fn suffix(self) -> &'static str {
-        match self {
-            Self::Snake => "snake",
-            Self::Kebab => "kebab",
-            Self::Camel => "camel",
-            Self::Pascal => "pascal",
-            Self::ScreamingSnake => "screaming_snake",
             Self::Lower => "lower",
             Self::Upper => "upper",
             Self::Title => "title",
@@ -91,6 +79,8 @@ impl CaseStyle {
 /// Extra methods: any `name = "..."` (or `name()`) besides reserved keys.
 struct CognomenAttr {
     styles: Vec<CaseStyle>,
+    /// Accepted for compatibility; case accessors live on `Label`.
+    #[allow(dead_code)]
     prefix: String,
     crate_path: syn::Path,
     extras: Vec<(String, ExtraDecl)>,
@@ -152,7 +142,12 @@ fn parse_key_litstr(input: ParseStream<'_>) -> Result<(Ident, syn::LitStr)> {
     ))
 }
 
-fn insert_extra(extras: &mut Vec<(String, ExtraDecl)>, key: Ident, default: String) -> Result<()> {
+fn insert_extra(
+    extras: &mut Vec<(String, ExtraDecl)>,
+    key: Ident,
+    default: String,
+    value_span: Span,
+) -> Result<()> {
     let name = key.to_string();
     if name == "prefix" || name == "rename" {
         return Err(syn::Error::new(
@@ -172,6 +167,12 @@ fn insert_extra(extras: &mut Vec<(String, ExtraDecl)>, key: Ident, default: Stri
             format!("duplicate cognomen extra `{name}`"),
         ));
     }
+    if template_has_fields(&default, value_span)? {
+        return Err(syn::Error::new(
+            value_span,
+            "placeholders are only valid on a variant extra",
+        ));
+    }
     extras.push((
         name,
         ExtraDecl {
@@ -182,30 +183,54 @@ fn insert_extra(extras: &mut Vec<(String, ExtraDecl)>, key: Ident, default: Stri
     Ok(())
 }
 
-fn reserved_idents(prefix: &str, styles: &[CaseStyle]) -> Vec<String> {
-    let mut out = vec![
-        String::from("label"),
-        String::from("as_str"),
-        String::from("from_label"),
-        String::from("VARIANTS"),
-        String::from("LABELS"),
-        String::from("eq"),
-        String::from("ne"),
-        String::from("fmt"),
-        String::from("as_ref"),
-        String::from("try_from"),
-        String::from("from_str"),
-        String::from("serialize"),
-        String::from("deserialize"),
-    ];
-    for style in styles {
-        out.push(format!("{}_{}", prefix, style.suffix()));
+const ALL_STYLES: [CaseStyle; 8] = [
+    CaseStyle::Snake,
+    CaseStyle::Kebab,
+    CaseStyle::Camel,
+    CaseStyle::Pascal,
+    CaseStyle::ScreamingSnake,
+    CaseStyle::Lower,
+    CaseStyle::Upper,
+    CaseStyle::Title,
+];
+
+impl CaseStyle {
+    fn case_path(self, crate_path: &syn::Path) -> TokenStream {
+        match self {
+            Self::Snake => quote! { #crate_path::Case::Snake },
+            Self::Kebab => quote! { #crate_path::Case::Kebab },
+            Self::Camel => quote! { #crate_path::Case::Camel },
+            Self::Pascal => quote! { #crate_path::Case::Pascal },
+            Self::ScreamingSnake => quote! { #crate_path::Case::ScreamingSnake },
+            Self::Lower => quote! { #crate_path::Case::Lower },
+            Self::Upper => quote! { #crate_path::Case::Upper },
+            Self::Title => quote! { #crate_path::Case::Title },
+        }
     }
-    out
 }
 
-fn check_extras(prefix: &str, styles: &[CaseStyle], extras: &[(String, ExtraDecl)]) -> Result<()> {
-    let reserved = reserved_idents(prefix, styles);
+fn reserved_idents() -> [&'static str; 15] {
+    [
+        "label",
+        "as_str",
+        "in_case",
+        "from_label",
+        "extra",
+        "VARIANTS",
+        "LABELS",
+        "eq",
+        "ne",
+        "fmt",
+        "as_ref",
+        "try_from",
+        "from_str",
+        "serialize",
+        "deserialize",
+    ]
+}
+
+fn check_extras(extras: &[(String, ExtraDecl)]) -> Result<()> {
+    let reserved = reserved_idents();
     for (name, decl) in extras {
         if syn::parse_str::<Ident>(name).is_err() {
             return Err(syn::Error::new(
@@ -259,16 +284,16 @@ impl Parse for CognomenAttr {
                 let key: Ident = input.parse()?;
                 let content;
                 parenthesized!(content in input);
-                let default = if content.is_empty() {
-                    String::new()
+                let (default, value_span) = if content.is_empty() {
+                    (String::new(), key.span())
                 } else {
                     let value: syn::LitStr = content.parse()?;
                     if !content.is_empty() {
                         return Err(content.error("expected a single string literal"));
                     }
-                    value.value()
+                    (value.value(), value.span())
                 };
-                insert_extra(&mut extras, key, default)?;
+                insert_extra(&mut extras, key, default, value_span)?;
             } else if input.peek(syn::Ident) && input.peek2(Token![=]) {
                 let (key, value) = parse_eq_litstr(input)?;
                 if key == "prefix" {
@@ -291,7 +316,7 @@ impl Parse for CognomenAttr {
                         "rename is only valid on a variant (e.g. #[cognomen(rename = \"io_error\")])",
                     ));
                 } else {
-                    insert_extra(&mut extras, key, value.value())?;
+                    insert_extra(&mut extras, key, value.value(), value.span())?;
                 }
             } else {
                 let (style, span) = parse_case_style(input)?;
@@ -357,7 +382,8 @@ impl Parse for VariantAttr {
 struct Variant<'a> {
     ident: &'a Ident,
     rename: Option<String>,
-    extras: BTreeMap<String, String>,
+    extras: BTreeMap<String, syn::LitStr>,
+    fields: FieldsKind,
 }
 
 impl Variant<'_> {
@@ -379,6 +405,107 @@ impl Variant<'_> {
         labels.sort();
         labels.dedup();
         labels
+    }
+
+    fn extra_text(&self, name: &str, decl: &ExtraDecl, default: CaseStyle) -> String {
+        self.extras
+            .get(name)
+            .map(syn::LitStr::value)
+            .or_else(|| decl.default.clone())
+            .unwrap_or_else(|| self.default_label(default))
+    }
+
+    fn ignore_pat(&self) -> TokenStream {
+        let ident = self.ident;
+        match &self.fields {
+            FieldsKind::Unit => quote! { Self::#ident },
+            FieldsKind::Named(_) => quote! { Self::#ident { .. } },
+            FieldsKind::Unnamed(_) => quote! { Self::#ident(..) },
+        }
+    }
+
+    fn bind_pat(&self, needed: &[String]) -> TokenStream {
+        let ident = self.ident;
+        match &self.fields {
+            FieldsKind::Unit => quote! { Self::#ident },
+            FieldsKind::Named(_) => {
+                let binds = needed.iter().map(|n| format_ident!("{n}"));
+                quote! { Self::#ident { #(#binds,)* .. } }
+            }
+            FieldsKind::Unnamed(n) => {
+                let max_needed = needed
+                    .iter()
+                    .filter_map(|s| s.parse::<usize>().ok())
+                    .max()
+                    .map(|m| m + 1)
+                    .unwrap_or(0);
+                let mut elems = Vec::new();
+                for i in 0..*n {
+                    let name = i.to_string();
+                    if needed.iter().any(|f| f == &name) {
+                        let id = format_ident!("__f{i}");
+                        elems.push(quote! { #id });
+                    } else if i < max_needed {
+                        elems.push(quote! { _ });
+                    } else {
+                        break;
+                    }
+                }
+                if elems.len() < *n {
+                    quote! { Self::#ident(#(#elems,)* ..) }
+                } else {
+                    quote! { Self::#ident(#(#elems),*) }
+                }
+            }
+        }
+    }
+
+    fn formatted_expr(
+        &self,
+        text: &str,
+        span: Span,
+        crate_path: &syn::Path,
+    ) -> Result<TokenStream> {
+        let segments = parse_template(text, span)?;
+        if segments.len() > 16 {
+            return Err(syn::Error::new(
+                span,
+                "cognomen extra has too many `{field}` / literal fragments (max 16)",
+            ));
+        }
+        let mut chain = quote! { #crate_path::Formatted::empty() };
+        for seg in &segments {
+            match seg {
+                Segment::Lit(t) if t.is_empty() => {}
+                Segment::Lit(t) => {
+                    chain = quote! { #chain.lit(#t) };
+                }
+                Segment::Field(name) => {
+                    let ident = self.fields.bind_ident(name);
+                    chain = quote! { #chain.arg(#ident) };
+                }
+            }
+        }
+        Ok(chain)
+    }
+
+    fn validate_extra(&self, name: &str, lit: &syn::LitStr) -> Result<()> {
+        let segments = parse_template(&lit.value(), lit.span())?;
+        let known = self.fields.names();
+        for seg in &segments {
+            let Segment::Field(field) = seg else {
+                continue;
+            };
+            if !known.iter().any(|n| n == field) {
+                let msg = if known.is_empty() {
+                    format!("placeholder `{{{field}}}` is invalid on a unit variant")
+                } else {
+                    format!("unknown field `{{{field}}}` in cognomen extra `{name}`")
+                };
+                return Err(syn::Error::new(lit.span(), msg));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -423,6 +550,138 @@ fn capitalize(w: &str) -> String {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Segment {
+    Lit(String),
+    Field(String),
+}
+
+impl Segment {
+    fn is_field(&self) -> bool {
+        matches!(self, Self::Field(_))
+    }
+}
+
+fn is_field_ref(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    if s.chars().all(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    is_ascii_ident(s)
+}
+
+fn parse_template(s: &str, span: Span) -> Result<Vec<Segment>> {
+    let mut out = Vec::new();
+    let mut lit = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '{' {
+            if chars.peek() == Some(&'{') {
+                chars.next();
+                lit.push('{');
+                continue;
+            }
+            if !lit.is_empty() {
+                out.push(Segment::Lit(std::mem::take(&mut lit)));
+            }
+            let mut name = String::new();
+            let mut closed = false;
+            for c in chars.by_ref() {
+                if c == '}' {
+                    closed = true;
+                    break;
+                }
+                if c == '{' {
+                    return Err(syn::Error::new(
+                        span,
+                        "nested `{` in cognomen extra; escape a literal brace as `{{`",
+                    ));
+                }
+                name.push(c);
+            }
+            if !closed {
+                return Err(syn::Error::new(span, "unclosed `{` in cognomen extra"));
+            }
+            if name.is_empty() {
+                return Err(syn::Error::new(
+                    span,
+                    "empty `{}` placeholder; use a field name (e.g. `{cause}`)",
+                ));
+            }
+            if !is_field_ref(&name) {
+                return Err(syn::Error::new(
+                    span,
+                    format!("placeholder `{{{name}}}` is not a field name"),
+                ));
+            }
+            out.push(Segment::Field(name));
+        } else if c == '}' {
+            if chars.peek() == Some(&'}') {
+                chars.next();
+                lit.push('}');
+            } else {
+                return Err(syn::Error::new(
+                    span,
+                    "unmatched `}` in cognomen extra; escape as `}}`",
+                ));
+            }
+        } else {
+            lit.push(c);
+        }
+    }
+    if !lit.is_empty() {
+        out.push(Segment::Lit(lit));
+    }
+    Ok(out)
+}
+
+fn template_has_fields(s: &str, span: Span) -> Result<bool> {
+    Ok(parse_template(s, span)?.iter().any(Segment::is_field))
+}
+
+enum FieldsKind {
+    Unit,
+    Named(Vec<Ident>),
+    Unnamed(usize),
+}
+
+impl FieldsKind {
+    fn from_fields(fields: &Fields) -> Self {
+        match fields {
+            Fields::Unit => Self::Unit,
+            Fields::Named(named) => {
+                Self::Named(named.named.iter().filter_map(|f| f.ident.clone()).collect())
+            }
+            Fields::Unnamed(unnamed) => Self::Unnamed(unnamed.unnamed.len()),
+        }
+    }
+
+    fn has_payload(&self) -> bool {
+        match self {
+            Self::Unit => false,
+            Self::Named(n) => !n.is_empty(),
+            Self::Unnamed(n) => *n > 0,
+        }
+    }
+
+    fn names(&self) -> Vec<String> {
+        match self {
+            Self::Unit => Vec::new(),
+            Self::Named(n) => n.iter().map(ToString::to_string).collect(),
+            Self::Unnamed(n) => (0..*n).map(|i| i.to_string()).collect(),
+        }
+    }
+
+    fn bind_ident(&self, field: &str) -> Ident {
+        match self {
+            Self::Unnamed(_) => format_ident!("__f{field}"),
+            _ => format_ident!("{field}"),
+        }
+    }
+}
+
 fn find_cognomen_attr<'a>(
     attrs: &'a [Attribute],
     duplicate_msg: &str,
@@ -456,7 +715,7 @@ fn ensure_extra(extras: &mut Vec<(String, ExtraDecl)>, name: String, span: Span)
 fn parse_variant_meta(
     variant: &syn::Variant,
     declared: &mut Vec<(String, ExtraDecl)>,
-) -> Result<(Option<String>, BTreeMap<String, String>)> {
+) -> Result<(Option<String>, BTreeMap<String, syn::LitStr>)> {
     let mut extras = BTreeMap::new();
     let mut rename = None;
 
@@ -478,14 +737,14 @@ fn parse_variant_meta(
                 ));
             }
             ensure_extra(declared, name.clone(), lit.span());
-            extras.insert(name, lit.value());
+            extras.insert(name, lit);
         }
     }
 
     Ok((rename, extras))
 }
 
-fn unit_variants<'a>(
+fn enum_variants<'a>(
     input: &'a DeriveInput,
     declared: &mut Vec<(String, ExtraDecl)>,
 ) -> Result<Vec<Variant<'a>>> {
@@ -498,18 +757,17 @@ fn unit_variants<'a>(
 
     let mut variants = Vec::with_capacity(data.variants.len());
     for variant in &data.variants {
-        if !matches!(variant.fields, Fields::Unit) {
-            return Err(syn::Error::new(
-                variant.span(),
-                "Cognomen only supports unit variants (no fields)",
-            ));
-        }
         let (rename, extras) = parse_variant_meta(variant, declared)?;
-        variants.push(Variant {
+        let parsed = Variant {
             ident: &variant.ident,
             rename,
             extras,
-        });
+            fields: FieldsKind::from_fields(&variant.fields),
+        };
+        for (name, lit) in &parsed.extras {
+            parsed.validate_extra(name, lit)?;
+        }
+        variants.push(parsed);
     }
     if variants.is_empty() {
         return Err(syn::Error::new(
@@ -546,11 +804,54 @@ fn reverse_eq_arms(
             }
         }
         let ident = v.ident;
+        let pat = v.ignore_pat();
         reverse_arms.push(quote! { #(#lits)|* => ::core::result::Result::Ok(#name::#ident) });
-        eq_arms.push(quote! { Self::#ident => matches!(other, #(#lits)|*) });
+        eq_arms.push(quote! { #pat => matches!(other, #(#lits)|*) });
     }
 
     Ok((reverse_arms, eq_arms, owner.into_keys().collect()))
+}
+
+fn extra_key_ty(name: &str, crate_path: &syn::Path) -> Option<TokenStream> {
+    let key = match name {
+        "reason" => quote! { ReasonKey },
+        "blurb" => quote! { BlurbKey },
+        "hint" => quote! { HintKey },
+        "help" => quote! { HelpKey },
+        _ => return None,
+    };
+    Some(quote! { #crate_path::#key })
+}
+
+fn extra_arms(
+    extra_name: &str,
+    decl: &ExtraDecl,
+    variants: &[Variant<'_>],
+    default: CaseStyle,
+    crate_path: &syn::Path,
+) -> Result<Vec<TokenStream>> {
+    variants
+        .iter()
+        .map(|v| {
+            let text = v.extra_text(extra_name, decl, default);
+            let span = v
+                .extras
+                .get(extra_name)
+                .map(syn::LitStr::span)
+                .unwrap_or_else(|| v.ident.span());
+            let segments = parse_template(&text, span)?;
+            let needed: Vec<String> = segments
+                .iter()
+                .filter_map(|seg| match seg {
+                    Segment::Field(f) => Some(f.clone()),
+                    Segment::Lit(_) => None,
+                })
+                .collect();
+            let pat = v.bind_pat(&needed);
+            let args = v.formatted_expr(&text, span, crate_path)?;
+            Ok(quote! { #pat => #args })
+        })
+        .collect()
 }
 
 pub fn derive(input: TokenStream) -> Result<TokenStream> {
@@ -568,68 +869,70 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     };
 
     let mut extras = attr.extras;
-    let variants = unit_variants(&input, &mut extras)?;
-    check_extras(&attr.prefix, &attr.styles, &extras)?;
+    let variants = enum_variants(&input, &mut extras)?;
+    check_extras(&extras)?;
     let crate_path = &attr.crate_path;
     let default = attr.styles[0];
-    let idents: Vec<&Ident> = variants.iter().map(|v| v.ident).collect();
+    let fieldless = variants.iter().all(|v| !v.fields.has_payload());
     let default_labels: Vec<String> = variants.iter().map(|v| v.default_label(default)).collect();
 
-    let case_methods = attr.styles.iter().map(|style| {
-        let method = format_ident!("{}_{}", attr.prefix, style.suffix());
-        let doc = format!(
-            "Stable label for this variant in the `{}` case.",
-            style.name()
-        );
-        let arms = variants.iter().map(|v| {
-            let ident = v.ident;
-            let label = v.case_label(*style);
-            quote! { Self::#ident => #label }
-        });
-        quote! {
-            #[doc = #doc]
-            #[inline]
-            #[must_use]
-            pub const fn #method(&self) -> &'static str {
-                match self { #(#arms,)* }
-            }
-        }
-    });
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let extra_methods = extras.iter().map(|(name, decl)| {
-        let method = format_ident!("{name}");
-        let doc = format!("Extra string for this variant (`{name}`).");
-        let arms = variants.iter().map(|v| {
-            let ident = v.ident;
-            let text = v.extras.get(name).cloned().unwrap_or_else(|| {
-                decl.default
-                    .clone()
-                    .unwrap_or_else(|| v.default_label(default))
-            });
-            quote! { Self::#ident => #text }
-        });
-        quote! {
-            #[doc = #doc]
-            #[inline]
-            #[must_use]
-            pub const fn #method(&self) -> &'static str {
-                match self { #(#arms,)* }
-            }
-        }
-    });
+    let extra_impls = extras
+        .iter()
+        .map(|(extra_name, decl)| {
+            let arms = extra_arms(extra_name, decl, &variants, default, crate_path)?;
+            let body = quote! {
+                #[inline]
+                fn extra(&self) -> #crate_path::Formatted<'_> {
+                    match self { #(#arms,)* }
+                }
+            };
+            Ok(if let Some(key) = extra_key_ty(extra_name, crate_path) {
+                quote! {
+                    impl #impl_generics #crate_path::Extra<#key> for #name #ty_generics #where_clause {
+                        #body
+                    }
+                }
+            } else {
+                quote! {
+                    const _: () = {
+                        enum __CognomenExtraKey {}
+                        impl #impl_generics #crate_path::Extra<__CognomenExtraKey> for #name #ty_generics #where_clause {
+                            #body
+                        }
+                    };
+                }
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     let label_arms = variants
         .iter()
         .zip(default_labels.iter())
         .map(|(v, label)| {
-            let ident = v.ident;
-            quote! { Self::#ident => #label }
+            let pat = v.ignore_pat();
+            quote! { #pat => #label }
         });
 
-    let (reverse_arms, eq_arms, all_labels) = reverse_eq_arms(name, &variants, &attr.styles)?;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let in_case_arms = variants.iter().map(|v| {
+        let pat = v.ignore_pat();
+        let case_arms = ALL_STYLES.iter().map(|style| {
+            let case = style.case_path(crate_path);
+            let label = v.case_label(*style);
+            quote! { #case => #label }
+        });
+        quote! {
+            #pat => match case {
+                #(#case_arms,)*
+            }
+        }
+    });
 
-    let variants_impl = input.generics.params.is_empty().then(|| {
+    let (reverse_arms, eq_arms, all_labels) = reverse_eq_arms(name, &variants, &attr.styles)?;
+
+    let variants_impl = (fieldless && input.generics.params.is_empty()).then(|| {
+        let idents: Vec<&Ident> = variants.iter().map(|v| v.ident).collect();
         quote! {
             impl #crate_path::Variants for #name {
                 const VARIANTS: &'static [Self] = &[#(Self::#idents,)*];
@@ -638,13 +941,10 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         }
     });
 
-    let parse_impls = quote! {
-        impl #impl_generics #name #ty_generics #where_clause {
-            /// Parse any declared-case label, or a variant `rename`, into `Self`.
-            ///
-            /// Equivalent to [`TryFrom::try_from`](core::convert::TryFrom).
+    let parse_impls = fieldless.then(|| quote! {
+        impl #impl_generics #crate_path::FromLabel for #name #ty_generics #where_clause {
             #[inline]
-            pub fn from_label(s: &str) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
+            fn from_label(s: &str) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
                 ::core::convert::TryFrom::try_from(s)
             }
         }
@@ -667,7 +967,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
                 ::core::convert::TryFrom::try_from(s)
             }
         }
-    };
+    });
 
     let de_impl_generics = {
         let params = &input.generics.params;
@@ -678,14 +978,17 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         }
     };
 
-    let serde_impls = cfg!(feature = "serde").then(|| {
+    let serde_impls = (fieldless && cfg!(feature = "serde")).then(|| {
         quote! {
             impl #impl_generics #crate_path::__serde::Serialize for #name #ty_generics #where_clause {
                 fn serialize<S: #crate_path::__serde::Serializer>(
                     &self,
                     serializer: S,
                 ) -> ::core::result::Result<S::Ok, S::Error> {
-                    #crate_path::__serde::Serialize::serialize(self.label(), serializer)
+                    #crate_path::__serde::Serialize::serialize(
+                        #crate_path::Label::label(self),
+                        serializer,
+                    )
                 }
             }
 
@@ -726,34 +1029,26 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     });
 
     Ok(quote! {
-        impl #impl_generics #name #ty_generics #where_clause {
-            /// Stable label for this variant in the default (first) case.
-            ///
-            /// Overridden by `#[cognomen(rename = "...")]` on the variant.
+        impl #impl_generics #crate_path::Label for #name #ty_generics #where_clause {
             #[inline]
-            #[must_use]
-            pub const fn label(&self) -> &'static str {
+            fn label(&self) -> &'static str {
                 match self { #(#label_arms,)* }
             }
 
-            /// Alias of [`Self::label`].
             #[inline]
-            #[must_use]
-            pub const fn as_str(&self) -> &'static str {
-                self.label()
+            fn in_case(&self, case: #crate_path::Case) -> &'static str {
+                match self { #(#in_case_arms,)* }
             }
-
-            #(#case_methods)*
-
-            #(#extra_methods)*
         }
+
+        #(#extra_impls)*
 
         #variants_impl
 
         impl #impl_generics ::core::convert::AsRef<str> for #name #ty_generics #where_clause {
             #[inline]
             fn as_ref(&self) -> &str {
-                self.label()
+                #crate_path::Label::label(self)
             }
         }
 
@@ -821,6 +1116,43 @@ mod tests {
         assert_eq!(CaseStyle::Upper.convert("Zero"), "ZERO");
         assert_eq!(CaseStyle::Snake.convert("Utf8"), "utf8");
         assert_eq!(CaseStyle::Title.convert("SingleProcess"), "Single Process");
+    }
+
+    #[test]
+    fn parse_template_parts() {
+        let span = Span::call_site();
+        assert_eq!(
+            parse_template("host open failed {cause}", span).unwrap(),
+            [
+                Segment::Lit(String::from("host open failed ")),
+                Segment::Field(String::from("cause")),
+            ]
+        );
+        assert_eq!(
+            parse_template("use {{braces}} {name}", span).unwrap(),
+            [
+                Segment::Lit(String::from("use {braces} ")),
+                Segment::Field(String::from("name")),
+            ]
+        );
+        assert_eq!(
+            parse_template("open failed {0}", span).unwrap(),
+            [
+                Segment::Lit(String::from("open failed ")),
+                Segment::Field(String::from("0")),
+            ]
+        );
+        assert!(parse_template("x {}", span).is_err());
+        assert!(parse_template("x {", span).is_err());
+        assert!(parse_template("x }", span).is_err());
+        assert_eq!(
+            parse_template("a {b} c", span).unwrap(),
+            [
+                Segment::Lit(String::from("a ")),
+                Segment::Field(String::from("b")),
+                Segment::Lit(String::from(" c")),
+            ]
+        );
     }
 
     #[test]
@@ -926,17 +1258,60 @@ mod tests {
         );
         assert_err(
             quote! {
-                #[cognomen(snake_case)]
-                enum Mode { Unit, WithField(u8) }
+                #[cognomen(snake_case, reason = "host open failed {cause}")]
+                enum Mode { A }
             },
-            "Cognomen only supports unit variants (no fields)",
+            "placeholders are only valid on a variant extra",
         );
         assert_err(
             quote! {
                 #[cognomen(snake_case)]
-                enum Mode { Named { x: u8 } }
+                enum Mode {
+                    #[cognomen(reason = "host open failed {cause}")]
+                    A,
+                }
             },
-            "Cognomen only supports unit variants (no fields)",
+            "placeholder `{cause}` is invalid on a unit variant",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(reason = "host open failed {nope}")]
+                    OpenFailed { cause: String },
+                }
+            },
+            "unknown field `{nope}` in cognomen extra `reason`",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(reason = "host open failed {}")]
+                    OpenFailed { cause: String },
+                }
+            },
+            "empty `{}` placeholder",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(reason = "host open failed {cause")]
+                    OpenFailed { cause: String },
+                }
+            },
+            "unclosed `{` in cognomen extra",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(reason = "host open failed cause}")]
+                    OpenFailed { cause: String },
+                }
+            },
+            "unmatched `}` in cognomen extra",
         );
         assert_err(
             quote! { enum Mode { A } },
@@ -1071,6 +1446,8 @@ mod tests {
             "label",
             "as_str",
             "from_label",
+            "in_case",
+            "extra",
             "VARIANTS",
             "LABELS",
             "eq",
@@ -1081,7 +1458,6 @@ mod tests {
             "from_str",
             "serialize",
             "deserialize",
-            "label_snake",
         ] {
             let ident = format_ident!("{name}");
             assert_err(
@@ -1092,13 +1468,6 @@ mod tests {
                 "conflicts with a generated cognomen item",
             );
         }
-        assert_err(
-            quote! {
-                #[cognomen(snake_case, prefix = "cfg", cfg_snake = "")]
-                enum Mode { A }
-            },
-            "conflicts with a generated cognomen item",
-        );
         assert_err(
             quote! {
                 #[cognomen(snake_case)]
@@ -1204,8 +1573,11 @@ mod tests {
         assert!(!basic.contains("Self :: Error"));
         assert!(!basic.contains("Self :: Err"));
         assert!(basic.contains("Variants"));
-        assert!(basic.contains("label_snake"));
-        assert!(basic.contains("label_kebab"));
+        assert!(basic.contains("Label"));
+        assert!(basic.contains("in_case"));
+        assert!(basic.contains("FromLabel"));
+        assert!(!basic.contains("pub const fn label"));
+        assert!(!basic.contains("label_snake"));
 
         ok(quote! {
             #[cognomen(snake, kebab, camel, pascal, screaming, lowercase, uppercase, title_case)]
@@ -1244,6 +1616,27 @@ mod tests {
             enum Mode {
                 #[cognomen(rename = "x",)]
                 A,
+            }
+        });
+        let fielded = ok(quote! {
+            #[cognomen(snake_case)]
+            enum HostError {
+                #[cognomen(reason = "host open failed {cause}")]
+                OpenFailed { cause: String },
+                #[cognomen(reason = "host refused request {why}")]
+                BadRequest { why: &'static str },
+                Unit,
+            }
+        });
+        assert!(fielded.contains("Formatted"));
+        assert!(fielded.contains("empty"));
+        assert!(!fielded.contains("from_label"));
+        assert!(!fielded.contains("Variants"));
+        ok(quote! {
+            #[cognomen(snake_case)]
+            enum Mode {
+                #[cognomen(reason = "open failed {0}")]
+                OpenFailed(String),
             }
         });
         let via_crate = ok(quote! {

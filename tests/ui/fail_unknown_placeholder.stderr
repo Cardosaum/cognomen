@@ -1,0 +1,5 @@
+error: unknown field `{nope}` in cognomen extra `reason`
+ --> tests/ui/fail_unknown_placeholder.rs:6:25
+  |
+6 |     #[cognomen(reason = "host open failed {nope}")]
+  |                         ^^^^^^^^^^^^^^^^^^^^^^^^^

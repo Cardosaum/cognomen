@@ -1,4 +1,4 @@
-//! Compile-time string labels for unit-like enum variants.
+//! Compile-time string labels for enum variants.
 //!
 //! A *cognomen* is an extra name. This crate gives each variant a second,
 //! stable label: a `&'static str` whose case you pick in the derive attribute.
@@ -7,10 +7,15 @@
 //! Downstream crates use this as the seam between a Rust ident and the string
 //! a config file, log line, CLI flag, or wire protocol actually carries.
 //!
+//! Labels and extras are **trait items** in this crate, not inherent methods
+//! on `E`. Import [`Label`], [`Reason`], [`Blurb`], ... to call them, or use
+//! UFCS (`<E as Label>::as_str(&e)`). A user `fn reason()` or a parent trait
+//! of the same name still compiles.
+//!
 //! # Quick start
 //!
 //! ```
-//! use cognomen::{Cognomen, Variants};
+//! use cognomen::{Case, Cognomen, FromLabel, Label, Variants};
 //!
 //! #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
 //! #[cognomen(snake_case, kebab-case)]
@@ -21,7 +26,7 @@
 //!
 //! assert_eq!(Mode::SingleProcess.label(), "single_process");
 //! assert_eq!(Mode::MultiProcess.as_str(), "multi_process");
-//! assert_eq!(Mode::SingleProcess.label_kebab(), "single-process");
+//! assert_eq!(Mode::SingleProcess.in_case(Case::Kebab), "single-process");
 //! assert_eq!(Mode::try_from("single-process"), Ok(Mode::SingleProcess));
 //! assert_eq!("multi_process".parse::<Mode>(), Ok(Mode::MultiProcess));
 //! assert!(Mode::SingleProcess == "single-process");
@@ -29,7 +34,8 @@
 //! ```
 //!
 //! The first case in `#[cognomen(...)]` is the default (`label()` / `as_str()` /
-//! serde out). Every listed case also gets `{prefix}_{case}`.
+//! serde out). [`Label::in_case`] converts from the ident in any [`Case`].
+//! `PartialEq<str>` on `E` compares the **label**, not an extra.
 //!
 //! # Case styles
 //!
@@ -48,19 +54,21 @@
 //!
 //! **Container** (required): `#[cognomen(<case>, ...)]`
 //!
-//! - One or more cases, comma-separated. First is the default.
-//! - `prefix = "cfg"`: accessor names become `cfg_snake`, `cfg_kebab`, ...
-//!   (must be a non-empty ASCII identifier; default `label`).
+//! - One or more cases, comma-separated. First is the default. Listed cases
+//!   are accepted by parse / serde-in; [`Label::in_case`] can still produce
+//!   any [`Case`].
+//! - `prefix = "cfg"`: accepted for compatibility; case accessors live on
+//!   [`Label`], so the prefix no longer names methods.
 //! - `crate = ::other::cognomen`: path used in generated code when this crate
 //!   is re-exported under another name.
 //!
 //! **Variant** (optional): `#[cognomen(rename = "io_error")]`
 //!
 //! Sets the default label to that exact string and accepts it when parsing.
-//! Other case accessors still convert from the ident.
+//! [`Label::in_case`] still converts from the ident.
 //!
 //! ```
-//! use cognomen::Cognomen;
+//! use cognomen::{Case, Cognomen, FromLabel, Label};
 //!
 //! #[derive(Debug, PartialEq, Cognomen)]
 //! #[cognomen(snake_case, kebab-case)]
@@ -71,30 +79,38 @@
 //! }
 //!
 //! assert_eq!(Wire::IoFailed.label(), "io_error");
-//! assert_eq!(Wire::IoFailed.label_snake(), "io_failed");
+//! assert_eq!(Wire::IoFailed.in_case(Case::Snake), "io_failed");
 //! assert_eq!(Wire::from_label("io_error").unwrap(), Wire::IoFailed);
 //! assert_eq!(Wire::try_from("io-failed"), Ok(Wire::IoFailed));
 //! ```
 //!
-//! Any other `name = "..."` is an [extra method](#extra-methods).
+//! Any other `name = "..."` is an [extra](#extras).
 //!
-//! Violations (non-enum, fields, missing case, collisions, bad prefix, bad
-//! extra) are compile errors. Variants named `Error` or `Err` are fine:
-//! generated `TryFrom` / `FromStr` name [`FromLabelError`] instead of
-//! `Self::Error` / `Self::Err`.
+//! Violations (non-enum, missing case, collisions, bad prefix, bad extra,
+//! unknown `{field}` placeholder) are compile errors. Variants named `Error`
+//! or `Err` are fine: generated `TryFrom` / `FromStr` name [`FromLabelError`]
+//! instead of `Self::Error` / `Self::Err`.
 //!
-//! # Extra methods
+//! # Extras
 //!
 //! Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
-//! `rename` becomes `const fn name(&self) -> &'static str`.
+//! `rename` is an extra. Known keys (`reason`, `blurb`, `hint`, `help`)
+//! implement a trait in this crate ([`Reason`], [`Blurb`], [`Hint`],
+//! [`Help`]). Other keys implement [`Extra`] with a private key type.
 //!
 //! On a variant, that string is the variant's value. On the enum, that string
 //! is the default for variants that omit the key. If the enum does not set a
 //! default, omitted variants use `as_str()` / `label()` (including `rename`).
 //! `name()` on the enum is the same as `name = ""`.
 //!
+//! Every extra returns [`Formatted`]. Static text is a single literal;
+//! `{field}` on a **variant** extra appends that named (or tuple-index)
+//! payload. Adding a placeholder does not change the signature. Enum-level
+//! defaults cannot contain placeholders. `{` / `}` in the text are written
+//! `{{` / `}}`.
+//!
 //! ```
-//! use cognomen::Cognomen;
+//! use cognomen::{Blurb, Cognomen, Label};
 //!
 //! #[derive(Cognomen)]
 //! #[cognomen(lower)]
@@ -114,7 +130,7 @@
 //! An enum-level default overrides `as_str()` for omitted variants:
 //!
 //! ```
-//! use cognomen::Cognomen;
+//! use cognomen::{Blurb, Cognomen, Hint};
 //!
 //! #[derive(Cognomen)]
 //! #[cognomen(lower, blurb = "", hint = "n/a")]
@@ -130,28 +146,87 @@
 //! assert_eq!(SourceKind::App.hint(), "n/a");
 //! ```
 //!
-//! Several extras can coexist. They are not accepted by `from_label` or
-//! serde. Names that collide with generated items (`label`, `as_str`,
-//! `{prefix}_{case}`, ...) are compile errors.
+//! Fielded variants keep [`Label`]. Parse, [`Variants`], and serde-in are
+//! omitted: a label is not enough to build a payload. Interpolate extras
+//! from the fields:
+//!
+//! ```
+//! use cognomen::{Cognomen, Label, Reason};
+//!
+//! #[derive(Debug, Clone, PartialEq, Eq, Cognomen)]
+//! #[cognomen(snake_case)]
+//! enum HostError {
+//!     #[cognomen(reason = "host backend unsupported {capability}")]
+//!     Unsupported { capability: &'static str },
+//!     #[cognomen(reason = "host open failed {cause}")]
+//!     OpenFailed { cause: &'static str },
+//!     #[cognomen(reason = "host refused request {why}")]
+//!     BadRequest { why: &'static str },
+//!     #[cognomen(reason = "host io failed {status}")]
+//!     Io { status: &'static str },
+//! }
+//!
+//! let e = HostError::OpenFailed { cause: "busy" };
+//! assert_eq!(e.as_str(), "open_failed");
+//! assert_eq!(e.reason(), "host open failed busy");
+//! assert_eq!(format!("{}", e.reason()), "host open failed busy");
+//! ```
+//!
+//! A unit extra and a fielded extra with the same key share one trait and
+//! one return type:
+//!
+//! ```
+//! use cognomen::{Cognomen, Formatted, Reason};
+//!
+//! #[derive(Cognomen)]
+//! #[cognomen(snake_case)]
+//! enum Kind {
+//!     #[cognomen(reason = "not implemented")]
+//!     Unimplemented,
+//! }
+//!
+//! #[derive(Cognomen)]
+//! #[cognomen(snake_case)]
+//! enum HostError {
+//!     #[cognomen(reason = "host open failed {cause}")]
+//!     OpenFailed { cause: &'static str },
+//! }
+//!
+//! fn sentence(e: &impl Reason) -> Formatted<'_> {
+//!     e.reason()
+//! }
+//!
+//! assert!(sentence(&HostError::OpenFailed { cause: "busy" }) == "host open failed busy");
+//! assert!(sentence(&Kind::Unimplemented) == "not implemented");
+//! ```
+//!
+//! Several extras can coexist. They are not accepted by [`FromLabel`] or
+//! serde. Names that collide with generated items (`label`, `as_str`, ...)
+//! are compile errors.
 //!
 //! # Generated API
 //!
 //! For `#[cognomen(snake_case, kebab-case)]` on `E`:
 //!
-//! - `label()` / `as_str()` -> `&'static str` (default case, or `rename`)
-//! - `label_snake()`, `label_kebab()`, ...
-//! - `{name}()` for each extra (`blurb()`, `hint()`, ...); omitted variants
-//!   use `as_str()` unless the enum sets a default
-//! - [`Variants`] (non-generic enums): `E::VARIANTS` and `E::LABELS` after
-//!   `use cognomen::Variants`. These are trait items, so they cannot clash
-//!   with another derive or a user `const VARIANTS`.
-//! - No `Display` impl. Print the label with `e.label()` / `e.as_str()`.
-//! - `AsRef<str>`, `PartialEq<str>` / `PartialEq<&str>`
-//! - `TryFrom<&str>`, `FromStr`, `E::from_label`
-//! - `Serialize` / `Deserialize` (feature `serde`): out is `label()`, in
-//!   accepts any declared case or `rename`
+//! - [`Label`]: `label()` / `as_str()` (default case, or `rename`) and
+//!   `in_case(Case)`
+//! - [`Reason`] / [`Blurb`] / [`Hint`] / [`Help`] / [`Extra`]: each extra
+//!   returns [`Formatted`]. Omitted variants use `as_str()` unless the enum
+//!   sets a default
+//! - [`Variants`] (non-generic, fieldless enums): `E::VARIANTS` and
+//!   `E::LABELS` after `use cognomen::Variants`. Trait items, so they cannot
+//!   clash with another derive or a user `const VARIANTS`
+//! - No `Display` / `Error` impl on `E`. Print the label with `e.label()`,
+//!   or an extra with `write!(f, "{}", e.reason())`
+//! - `AsRef<str>`, `PartialEq<str>` / `PartialEq<&str>` (label, not extra)
+//! - `TryFrom<&str>`, `FromStr`, [`FromLabel`] (fieldless enums)
+//! - `Serialize` / `Deserialize` (feature `serde`, fieldless): out is
+//!   `label()`, in accepts any declared case or `rename`
 //! - [`clap::ArgType::value_parser`] (feature `clap`): clap flag parser in
 //!   the binary; the enum crate can stay `no_std`
+//!
+//! Nothing is inherent on `E`. A follow-up in `numbered` should move
+//! `number()` onto a trait the same way.
 //!
 //! # Features
 //!
@@ -168,10 +243,11 @@
 //! cognomen = { version = "0.4", default-features = false }
 //! ```
 //!
-//! Labels, parse, `AsRef`, and [`Variants`] use only `core`. Add
-//! `features = ["alloc"]` to keep the unmatched string on parse errors. Add
-//! `features = ["serde"]` for wire formats. Add `features = ["clap"]` in the
-//! binary that owns the clap surface, not in a `no_std` kernel.
+//! Labels, extras ([`Formatted`]), parse, `AsRef`, and [`Variants`] use only
+//! `core`. Add `features = ["alloc"]` to keep the unmatched string on parse
+//! errors. Add `features = ["serde"]` for wire formats. Add
+//! `features = ["clap"]` in the binary that owns the clap surface, not in a
+//! `no_std` kernel.
 //!
 //! # Word splitting
 //!
@@ -196,8 +272,15 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+mod extra;
+mod formatted;
+mod label;
+
 #[doc(inline)]
 pub use cognomen_macros::Cognomen;
+pub use extra::{Blurb, BlurbKey, Extra, Help, HelpKey, Hint, HintKey, Reason, ReasonKey};
+pub use formatted::Formatted;
+pub use label::{Case, FromLabel, Label};
 
 #[cfg(feature = "clap")]
 #[cfg_attr(docsrs, doc(cfg(feature = "clap")))]
@@ -234,11 +317,11 @@ pub trait Variants: Sized + 'static {
 /// Error returned when a string matches no declared label.
 ///
 /// Produced by [`TryFrom<&str>`](core::convert::TryFrom), [`core::str::FromStr`],
-/// and `E::from_label`. With `alloc`, the unmatched string is stored in
-/// [`Self::input`]. With `std`, this implements [`std::error::Error`].
+/// and [`FromLabel::from_label`]. With `alloc`, the unmatched string is stored
+/// in [`Self::input`]. With `std`, this implements [`std::error::Error`].
 ///
 /// ```
-/// use cognomen::{Cognomen, FromLabelError};
+/// use cognomen::{Cognomen, FromLabel, FromLabelError};
 ///
 /// #[derive(Debug, Cognomen)]
 /// #[cognomen(snake_case)]
@@ -371,6 +454,32 @@ mod tests {
         assert_eq!(Shared::Mic.as_str(), "mic");
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum HostError {
+        #[cognomen(reason = "host backend unsupported {capability}")]
+        Unsupported { capability: &'static str },
+        #[cognomen(reason = "host open failed {cause}")]
+        OpenFailed { cause: &'static str },
+        #[cognomen(reason = "host refused request {why}")]
+        BadRequest { why: &'static str },
+        #[cognomen(reason = "host io failed {status}")]
+        Io { status: &'static str },
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum Mixed {
+        #[cognomen(reason = "stdout write failed")]
+        Write,
+        #[cognomen(reason = "host open failed {cause}")]
+        OpenFailed { cause: &'static str },
+        #[cognomen(reason = "use {{braces}} {name}")]
+        Escaped { name: &'static str },
+        #[cognomen(reason = "open failed {0}")]
+        Tuple(u8),
+    }
+
     #[test]
     fn extra_methods() {
         assert_eq!(Kind::Mic.as_str(), "mic");
@@ -387,10 +496,104 @@ mod tests {
     }
 
     #[test]
+    fn interpolates_named_payload() {
+        let e = HostError::OpenFailed { cause: "busy" };
+        assert_eq!(e.as_str(), "open_failed");
+        assert_eq!(e.in_case(Case::Snake), "open_failed");
+        assert_eq!(e.reason(), "host open failed busy");
+        assert_eq!(
+            HostError::Unsupported { capability: "x" }.reason(),
+            "host backend unsupported x"
+        );
+        assert_eq!(
+            HostError::BadRequest {
+                why: "device name has interior NUL"
+            }
+            .reason(),
+            "host refused request device name has interior NUL"
+        );
+        assert_eq!(
+            HostError::Io {
+                status: "short write"
+            }
+            .reason(),
+            "host io failed short write"
+        );
+        assert!(e == "open_failed");
+        assert_eq!(core::convert::AsRef::<str>::as_ref(&e), "open_failed");
+    }
+
+    #[test]
+    fn interpolates_mixed_and_tuple() {
+        assert_eq!(Mixed::Write.reason(), "stdout write failed");
+        assert_eq!(
+            Mixed::OpenFailed { cause: "busy" }.reason(),
+            "host open failed busy"
+        );
+        assert_eq!(Mixed::Escaped { name: "mic" }.reason(), "use {braces} mic");
+        assert_eq!(Mixed::Tuple(7).reason(), "open failed 7");
+        assert_eq!(Mixed::Tuple(7).as_str(), "tuple");
+    }
+
+    #[derive(Cognomen)]
+    #[cognomen(snake_case)]
+    enum KindUnimplemented {
+        #[cognomen(reason = "not implemented")]
+        Unimplemented,
+    }
+
+    impl KindUnimplemented {
+        fn reason(&self) -> u8 {
+            0
+        }
+
+        fn as_str(&self) -> u8 {
+            1
+        }
+    }
+
+    #[test]
+    fn extras_share_one_trait_and_do_not_clash() {
+        fn sentence(e: &impl Reason) -> Formatted<'_> {
+            e.reason()
+        }
+        assert!(sentence(&HostError::OpenFailed { cause: "busy" }) == "host open failed busy");
+        assert!(sentence(&KindUnimplemented::Unimplemented) == "not implemented");
+        assert_eq!(KindUnimplemented::Unimplemented.reason(), 0);
+        assert_eq!(KindUnimplemented::Unimplemented.as_str(), 1);
+        assert_eq!(
+            <KindUnimplemented as Reason>::reason(&KindUnimplemented::Unimplemented),
+            "not implemented"
+        );
+        assert_eq!(
+            <KindUnimplemented as Label>::as_str(&KindUnimplemented::Unimplemented),
+            "unimplemented"
+        );
+    }
+
+    #[cfg(feature = "alloc")]
+    #[derive(Debug, Clone, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum OwnedHostError {
+        #[cognomen(reason = "host open failed {cause}")]
+        OpenFailed { cause: alloc::string::String },
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn interpolates_owned_string() {
+        let e = OwnedHostError::OpenFailed {
+            cause: alloc::string::String::from("busy"),
+        };
+        assert_eq!(e.reason(), "host open failed busy");
+        assert_eq!(e.reason().to_string(), "host open failed busy");
+    }
+
+    #[test]
     fn aliases_and_tables() {
         assert_eq!(Mode::SingleProcess.label(), "single_process");
         assert_eq!(Mode::MultiProcess.as_str(), "multi_process");
-        assert_eq!(Mode::SingleProcess.label_kebab(), "single-process");
+        assert_eq!(Mode::SingleProcess.in_case(Case::Kebab), "single-process");
         assert_eq!(
             core::convert::AsRef::<str>::as_ref(&Mode::SingleProcess),
             "single_process"
@@ -415,7 +618,7 @@ mod tests {
     }
 
     const fn mode_label_in_const() -> &'static str {
-        Mode::SingleProcess.label()
+        Mode::LABELS[0]
     }
 
     #[test]
@@ -529,17 +732,17 @@ mod tests {
     #[test]
     fn case_aliases() {
         assert_eq!(Alias::SingleProcess.label(), "single_process");
-        assert_eq!(Alias::SingleProcess.label_snake(), "single_process");
-        assert_eq!(Alias::SingleProcess.label_kebab(), "single-process");
-        assert_eq!(Alias::SingleProcess.label_camel(), "singleProcess");
-        assert_eq!(Alias::SingleProcess.label_pascal(), "SingleProcess");
+        assert_eq!(Alias::SingleProcess.in_case(Case::Snake), "single_process");
+        assert_eq!(Alias::SingleProcess.in_case(Case::Kebab), "single-process");
+        assert_eq!(Alias::SingleProcess.in_case(Case::Camel), "singleProcess");
+        assert_eq!(Alias::SingleProcess.in_case(Case::Pascal), "SingleProcess");
         assert_eq!(
-            Alias::SingleProcess.label_screaming_snake(),
+            Alias::SingleProcess.in_case(Case::ScreamingSnake),
             "SINGLE_PROCESS"
         );
-        assert_eq!(Alias::SingleProcess.label_lower(), "singleprocess");
-        assert_eq!(Alias::SingleProcess.label_upper(), "SINGLEPROCESS");
-        assert_eq!(Alias::SingleProcess.label_title(), "Single Process");
+        assert_eq!(Alias::SingleProcess.in_case(Case::Lower), "singleprocess");
+        assert_eq!(Alias::SingleProcess.in_case(Case::Upper), "SINGLEPROCESS");
+        assert_eq!(Alias::SingleProcess.in_case(Case::Title), "Single Process");
         assert_eq!(
             Alias::from_label("single-process").unwrap(),
             Alias::SingleProcess
@@ -565,8 +768,14 @@ mod tests {
     #[test]
     fn prefix_and_as_ref() {
         assert_eq!(Prefixed::EnableLogging.label(), "enable_logging");
-        assert_eq!(Prefixed::EnableLogging.cfg_snake(), "enable_logging");
-        assert_eq!(Prefixed::EnableLogging.cfg_kebab(), "enable-logging");
+        assert_eq!(
+            Prefixed::EnableLogging.in_case(Case::Snake),
+            "enable_logging"
+        );
+        assert_eq!(
+            Prefixed::EnableLogging.in_case(Case::Kebab),
+            "enable-logging"
+        );
         assert_eq!(
             core::convert::AsRef::<str>::as_ref(&Prefixed::EnableLogging),
             "enable_logging"

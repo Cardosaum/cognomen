@@ -1,5 +1,0 @@
-error: extra method `cfg_snake` conflicts with a generated cognomen item
- --> tests/ui/fail_reserved_prefix_case.rs:4:40
-  |
-4 | #[cognomen(snake_case, prefix = "cfg", cfg_snake = "")]
-  |                                        ^^^^^^^^^

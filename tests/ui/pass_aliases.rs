@@ -1,4 +1,4 @@
-use cognomen::Cognomen;
+use cognomen::{Case, Cognomen, Label};
 
 #[derive(Cognomen)]
 #[cognomen(snake, kebab, camel_case, pascal, screaming, lowercase, uppercase, title_case)]
@@ -8,11 +8,14 @@ enum Mode {
 
 fn main() {
     assert_eq!(Mode::SingleProcess.label(), "single_process");
-    assert_eq!(Mode::SingleProcess.label_kebab(), "single-process");
-    assert_eq!(Mode::SingleProcess.label_camel(), "singleProcess");
-    assert_eq!(Mode::SingleProcess.label_pascal(), "SingleProcess");
-    assert_eq!(Mode::SingleProcess.label_screaming_snake(), "SINGLE_PROCESS");
-    assert_eq!(Mode::SingleProcess.label_lower(), "singleprocess");
-    assert_eq!(Mode::SingleProcess.label_upper(), "SINGLEPROCESS");
-    assert_eq!(Mode::SingleProcess.label_title(), "Single Process");
+    assert_eq!(Mode::SingleProcess.in_case(Case::Kebab), "single-process");
+    assert_eq!(Mode::SingleProcess.in_case(Case::Camel), "singleProcess");
+    assert_eq!(Mode::SingleProcess.in_case(Case::Pascal), "SingleProcess");
+    assert_eq!(
+        Mode::SingleProcess.in_case(Case::ScreamingSnake),
+        "SINGLE_PROCESS"
+    );
+    assert_eq!(Mode::SingleProcess.in_case(Case::Lower), "singleprocess");
+    assert_eq!(Mode::SingleProcess.in_case(Case::Upper), "SINGLEPROCESS");
+    assert_eq!(Mode::SingleProcess.in_case(Case::Title), "Single Process");
 }
