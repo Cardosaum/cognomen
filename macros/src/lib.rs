@@ -34,6 +34,14 @@ use proc_macro::TokenStream;
 /// Overrides the default label with that exact string and accepts it when
 /// parsing. [`cognomen::Label::in_case`] still converts from the ident.
 ///
+/// `#[cognomen(alias = "main")]` adds a parse-in string only. It does not
+/// change `label()`, `as_str()`, serde-out, `PartialEq<str>`, or `in_case`.
+/// Repeat the key for more than one alias. Empty `""` is a compile error.
+///
+/// `#[cognomen(unknown)]` on exactly one unit variant of a fieldless enum
+/// sends unmatched parse and serde-in to that variant. The unmatched string
+/// is not stored.
+///
 /// # Extras
 ///
 /// Any other `name = "..."` is an extra. Known keys implement a trait in
@@ -62,8 +70,9 @@ use proc_macro::TokenStream;
 /// - `cognomen::Label`: `label` / `as_str` / `in_case`
 /// - `cognomen::Reason` / `Blurb` / `Hint` / `Help` / `Extra`: extras
 /// - `cognomen::Variants` (non-generic, fieldless): `VARIANTS` / `LABELS`
-/// - `AsRef<str>`, `PartialEq<str>` (compares the label)
-/// - `TryFrom<&str>`, `FromStr`, `cognomen::FromLabel` (fieldless enums)
+/// - `AsRef<str>`, `PartialEq<str>` (compares the label, not an alias)
+/// - `TryFrom<&str>`, `FromStr`, `cognomen::FromLabel` (fieldless enums;
+///   `alias` and optional `unknown` fallback)
 /// - `Serialize` / `Deserialize` (feature `serde`; fieldless enums)
 ///
 /// See the [`cognomen`](https://docs.rs/cognomen) crate docs for case styles,

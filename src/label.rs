@@ -40,16 +40,21 @@ pub trait Label {
         self.label()
     }
 
-    /// Ident converted to `case` (ignores `rename`).
+    /// Ident converted to `case` (ignores `rename` and `alias`).
     fn in_case(&self, case: Case) -> &'static str;
 }
 
-/// Parse a declared-case label or `rename` into `Self`.
+/// Parse a declared-case label, `rename`, or `alias` into `Self`.
 ///
 /// Implemented only for fieldless enums: a label cannot rebuild a payload.
+/// A variant marked `#[cognomen(unknown)]` receives unmatched strings
+/// instead of [`crate::FromLabelError`]; that path is not a bijection.
 pub trait FromLabel: Sized {
-    /// Parse any declared-case label, or a variant `rename`, into `Self`.
+    /// Parse any declared-case label, a variant `rename`, or a variant
+    /// `alias`, into `Self`.
     ///
-    /// Equivalent to [`TryFrom::try_from`](core::convert::TryFrom).
+    /// Equivalent to [`TryFrom::try_from`](core::convert::TryFrom). When the
+    /// enum marks a unit variant `unknown`, unmatched input becomes that
+    /// variant and this never returns [`crate::FromLabelError`].
     fn from_label(s: &str) -> Result<Self, crate::FromLabelError>;
 }

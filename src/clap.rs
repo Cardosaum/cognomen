@@ -57,7 +57,8 @@ impl<T> ArgType for T where T: Variants + FromStr + Clone + Send + Sync + 'stati
 /// Clap [`TypedValueParser`] for a cognomen enum.
 ///
 /// Built by [`ArgType::value_parser`]. Parse uses [`FromStr`] (every
-/// declared case and `rename`). Help lists the default [`Variants::LABELS`].
+/// declared case, `rename`, and `alias`; unmatched input becomes an
+/// `unknown` variant if marked). Help lists the default [`Variants::LABELS`].
 #[derive(Clone, Copy, Debug)]
 pub struct Parser<T> {
     _ty: PhantomData<fn() -> T>,

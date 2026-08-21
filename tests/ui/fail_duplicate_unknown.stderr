@@ -1,0 +1,5 @@
+error: only one variant may be marked #[cognomen(unknown)]
+ --> tests/ui/fail_duplicate_unknown.rs:8:16
+  |
+8 |     #[cognomen(unknown)]
+  |                ^^^^^^^

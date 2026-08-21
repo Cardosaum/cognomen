@@ -1,0 +1,5 @@
+error: cognomen alias must not be empty
+ --> tests/ui/fail_empty_alias.rs:6:24
+  |
+6 |     #[cognomen(alias = "")]
+  |                        ^^

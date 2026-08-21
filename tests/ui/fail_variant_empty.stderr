@@ -1,4 +1,4 @@
-error: variant #[cognomen(...)] requires rename = "..." or an extra method
+error: variant #[cognomen(...)] requires rename = "...", alias = "...", unknown, or an extra method
  --> tests/ui/fail_variant_empty.rs:6:5
   |
 6 |     #[cognomen()]
