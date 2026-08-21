@@ -67,10 +67,19 @@ serde out). `PartialEq<str>` on `E` compares the **label**, not an extra.
   `Label`.
 - `crate = ::other::cognomen`: generated path when you re-export this crate.
 
-**Variant** (optional): `#[cognomen(rename = "io_error")]`
+**Variant** (optional):
 
-Sets the default label to that exact string and accepts it when parsing.
-`Label::in_case` still converts from the ident.
+- `#[cognomen(rename = "io_error")]`: sets the default label to that exact
+  string and accepts it when parsing. `Label::in_case` still converts from
+  the ident.
+- `#[cognomen(alias = "main")]`: extra parse-in string. Does not change
+  `label()`, `as_str()`, serde-out, `PartialEq<str>`, or `in_case`. Repeat
+  the key for more than one alias. Empty `""` is a compile error.
+- `#[cognomen(unknown)]`: unmatched parse and serde-in become this unit
+  variant. Fieldless enums only; exactly one such variant. The unmatched
+  string is not stored. clap `value_parser` still rejects unmatched input:
+  unknown is a wire fallback, not a flag fallback. Do not default a
+  catch-all; mark it explicitly.
 
 ```rust
 use cognomen::{Case, Cognomen, FromLabel, Label};
@@ -88,16 +97,55 @@ assert_eq!(Wire::IoFailed.in_case(Case::Snake), "io_failed");
 assert_eq!(Wire::from_label("io_error").unwrap(), Wire::IoFailed);
 ```
 
+An alias is parse-only. `""` is not an alias; keep that mapping local.
+
+```rust
+use cognomen::{Cognomen, FromLabel, Label};
+
+#[derive(Debug, PartialEq, Cognomen)]
+#[cognomen(snake_case)]
+enum ProcessRole {
+    #[cognomen(alias = "main")]
+    Supervisor,
+    Worker,
+}
+
+assert_eq!(ProcessRole::Supervisor.label(), "supervisor");
+assert_eq!(ProcessRole::from_label("main").unwrap(), ProcessRole::Supervisor);
+assert!(ProcessRole::from_label("").is_err());
+assert!(ProcessRole::Supervisor != "main");
+```
+
+An unknown variant receives unmatched wire tags. `from_label` is no longer
+a bijection.
+
+```rust
+use cognomen::{Cognomen, FromLabel, Label};
+
+#[derive(Debug, PartialEq, Cognomen)]
+#[cognomen(snake_case)]
+enum ChannelKind {
+    Trades,
+    L2Book,
+    #[cognomen(unknown)]
+    Other,
+}
+
+assert_eq!(ChannelKind::from_label("trades").unwrap(), ChannelKind::Trades);
+assert_eq!(ChannelKind::from_label("nope").unwrap(), ChannelKind::Other);
+assert_eq!(ChannelKind::Other.label(), "other");
+```
+
 Any other `name = "..."` is an [extra](#extras).
 
-Violations (non-enum, missing case, collisions, bad prefix, bad extra, unknown
-`{field}` placeholder) are compile errors, pinned by trybuild tests under
-`tests/ui/`.
+Violations (non-enum, missing case, collisions, empty alias, more than one
+`unknown`, bad prefix, bad extra, unknown `{field}` placeholder) are compile
+errors, pinned by trybuild tests under `tests/ui/`.
 
 ## Extras
 
-Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
-`rename` is an extra. Known keys (`reason`, `blurb`, `hint`, `help`)
+Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`,
+`rename`, and `alias` is an extra. Known keys (`reason`, `blurb`, `hint`, `help`)
 implement a trait in this crate. Import it to call `e.reason()`.
 
 On a variant, that string is the variant's value. On the enum, that string
@@ -206,10 +254,10 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`. Nothing is inherent on `E`.
 | `Label` | `label()` / `as_str()` (default or `rename`); `in_case(Case)` |
 | `Reason` / `Blurb` / `Hint` / `Help` / `Extra` | extras; always `Formatted` |
 | `Variants` | `E::VARIANTS` / `E::LABELS` after `use cognomen::Variants` (non-generic, fieldless) |
-| `AsRef<str>`, `PartialEq<str>` | compare against any declared **label** |
-| `TryFrom<&str>`, `FromStr`, `FromLabel` | fieldless enums; uses `core` |
-| `Serialize` / `Deserialize` | feature `serde`, fieldless; out is `label()`, in accepts any declared case |
-| `T::value_parser()` | feature `clap`; import `cognomen::clap::ArgType` in the binary |
+| `AsRef<str>`, `PartialEq<str>` | compare against any declared **label**, not an alias |
+| `TryFrom<&str>`, `FromStr`, `FromLabel` | fieldless; cases, `rename`, `alias`; `unknown` if marked |
+| `Serialize` / `Deserialize` | feature `serde`, fieldless; out is `label()`, in accepts cases, `rename`, `alias`, and `unknown` |
+| `T::value_parser()` | feature `clap`; declared cases, `rename`, `alias`; does not follow `unknown` |
 
 `numbered` still has inherent `number()`; a follow-up should move that onto a
 trait the same way.

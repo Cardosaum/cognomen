@@ -62,10 +62,19 @@
 //! - `crate = ::other::cognomen`: path used in generated code when this crate
 //!   is re-exported under another name.
 //!
-//! **Variant** (optional): `#[cognomen(rename = "io_error")]`
+//! **Variant** (optional):
 //!
-//! Sets the default label to that exact string and accepts it when parsing.
-//! [`Label::in_case`] still converts from the ident.
+//! - `#[cognomen(rename = "io_error")]`: sets the default label to that
+//!   exact string and accepts it when parsing. [`Label::in_case`] still
+//!   converts from the ident.
+//! - `#[cognomen(alias = "main")]`: extra parse-in string. Does not change
+//!   `label()`, `as_str()`, serde-out, [`PartialEq<str>`], or `in_case`.
+//!   Repeat the key for more than one alias. Empty `""` is a compile error.
+//! - `#[cognomen(unknown)]`: unmatched parse and serde-in become this unit
+//!   variant. Fieldless enums only; exactly one such variant. The unmatched
+//!   string is not stored. clap `value_parser` still rejects unmatched
+//!   input: unknown is a wire fallback, not a flag fallback. Do not default
+//!   a catch-all; mark it explicitly.
 //!
 //! ```
 //! use cognomen::{Case, Cognomen, FromLabel, Label};
@@ -84,17 +93,58 @@
 //! assert_eq!(Wire::try_from("io-failed"), Ok(Wire::IoFailed));
 //! ```
 //!
+//! An alias is parse-only. `""` is not an alias; keep that mapping local.
+//!
+//! ```
+//! use cognomen::{Cognomen, FromLabel, Label};
+//!
+//! #[derive(Debug, PartialEq, Cognomen)]
+//! #[cognomen(snake_case)]
+//! enum ProcessRole {
+//!     #[cognomen(alias = "main")]
+//!     Supervisor,
+//!     Worker,
+//! }
+//!
+//! assert_eq!(ProcessRole::Supervisor.label(), "supervisor");
+//! assert_eq!(ProcessRole::from_label("main").unwrap(), ProcessRole::Supervisor);
+//! assert_eq!(ProcessRole::from_label("supervisor").unwrap(), ProcessRole::Supervisor);
+//! assert!(ProcessRole::from_label("").is_err());
+//! assert!(ProcessRole::Supervisor != "main");
+//! ```
+//!
+//! An unknown variant receives unmatched wire tags. `from_label` is no
+//! longer a bijection.
+//!
+//! ```
+//! use cognomen::{Cognomen, FromLabel, Label};
+//!
+//! #[derive(Debug, PartialEq, Cognomen)]
+//! #[cognomen(snake_case)]
+//! enum ChannelKind {
+//!     Trades,
+//!     L2Book,
+//!     #[cognomen(unknown)]
+//!     Other,
+//! }
+//!
+//! assert_eq!(ChannelKind::from_label("trades").unwrap(), ChannelKind::Trades);
+//! assert_eq!(ChannelKind::from_label("nope").unwrap(), ChannelKind::Other);
+//! assert_eq!(ChannelKind::Other.label(), "other");
+//! ```
+//!
 //! Any other `name = "..."` is an [extra](#extras).
 //!
-//! Violations (non-enum, missing case, collisions, bad prefix, bad extra,
-//! unknown `{field}` placeholder) are compile errors. Variants named `Error`
+//! Violations (non-enum, missing case, collisions, empty alias, more than
+//! one `unknown`, bad prefix, bad extra, unknown `{field}` placeholder) are
+//! compile errors. Variants named `Error`
 //! or `Err` are fine: generated `TryFrom` / `FromStr` name [`FromLabelError`]
 //! instead of `Self::Error` / `Self::Err`.
 //!
 //! # Extras
 //!
-//! Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`, and
-//! `rename` is an extra. Known keys (`reason`, `blurb`, `hint`, `help`)
+//! Any `name = "..."` in `#[cognomen(...)]` besides `prefix`, `crate`,
+//! `rename`, and `alias` is an extra. Known keys (`reason`, `blurb`, `hint`, `help`)
 //! implement a trait in this crate ([`Reason`], [`Blurb`], [`Hint`],
 //! [`Help`]). Other keys implement [`Extra`] with a private key type.
 //!
@@ -218,12 +268,16 @@
 //!   clash with another derive or a user `const VARIANTS`
 //! - No `Display` / `Error` impl on `E`. Print the label with `e.label()`,
 //!   or an extra with `write!(f, "{}", e.reason())`
-//! - `AsRef<str>`, `PartialEq<str>` / `PartialEq<&str>` (label, not extra)
-//! - `TryFrom<&str>`, `FromStr`, [`FromLabel`] (fieldless enums)
+//! - `AsRef<str>`, `PartialEq<str>` / `PartialEq<&str>` (label, not extra or alias)
+//! - `TryFrom<&str>`, `FromStr`, [`FromLabel`] (fieldless enums): declared
+//!   cases, `rename`, and `alias`; unmatched input errors unless a variant
+//!   is marked `unknown`
 //! - `Serialize` / `Deserialize` (feature `serde`, fieldless): out is
-//!   `label()`, in accepts any declared case or `rename`
+//!   `label()`, in accepts any declared case, `rename`, or `alias`, and an
+//!   `unknown` variant if marked
 //! - [`clap::ArgType::value_parser`] (feature `clap`): clap flag parser in
-//!   the binary; the enum crate can stay `no_std`
+//!   the binary; the enum crate can stay `no_std`. Accepts declared cases,
+//!   `rename`, and `alias`. Does not follow `unknown`
 //!
 //! Nothing is inherent on `E`. A follow-up in `numbered` should move
 //! `number()` onto a trait the same way.
@@ -280,6 +334,8 @@ mod label;
 pub use cognomen_macros::Cognomen;
 pub use extra::{Blurb, BlurbKey, Extra, Help, HelpKey, Hint, HintKey, Reason, ReasonKey};
 pub use formatted::Formatted;
+#[doc(hidden)]
+pub use label::__FromDeclared;
 pub use label::{Case, FromLabel, Label};
 
 #[cfg(feature = "clap")]
@@ -617,6 +673,93 @@ mod tests {
         assert_eq!(Mode::try_from("nope").unwrap_err().input, "nope");
     }
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum ProcessRole {
+        #[cognomen(alias = "main")]
+        Supervisor,
+        Worker,
+    }
+
+    #[test]
+    fn parse_alias_is_parse_only() {
+        assert_eq!(ProcessRole::Supervisor.label(), "supervisor");
+        assert_eq!(ProcessRole::Supervisor.as_str(), "supervisor");
+        assert_eq!(ProcessRole::Supervisor.in_case(Case::Snake), "supervisor");
+        assert_eq!(ProcessRole::Supervisor.in_case(Case::Kebab), "supervisor");
+        assert_eq!(ProcessRole::LABELS, &["supervisor", "worker"]);
+        assert_eq!(
+            ProcessRole::from_label("main").unwrap(),
+            ProcessRole::Supervisor
+        );
+        assert_eq!(
+            ProcessRole::from_label("supervisor").unwrap(),
+            ProcessRole::Supervisor
+        );
+        assert_eq!(
+            "main".parse::<ProcessRole>().unwrap(),
+            ProcessRole::Supervisor
+        );
+        assert!(ProcessRole::from_label("").is_err());
+        assert!(ProcessRole::Supervisor == "supervisor");
+        assert!(ProcessRole::Supervisor != "main");
+        assert!("main" != ProcessRole::Supervisor);
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case)]
+    enum ChannelKind {
+        Trades,
+        L2Book,
+        #[cognomen(unknown)]
+        Other,
+    }
+
+    #[test]
+    fn unknown_variant_is_parse_fallback() {
+        assert_eq!(
+            ChannelKind::from_label("trades").unwrap(),
+            ChannelKind::Trades
+        );
+        assert_eq!(
+            ChannelKind::from_label("l2_book").unwrap(),
+            ChannelKind::L2Book
+        );
+        assert_eq!(ChannelKind::from_label("nope").unwrap(), ChannelKind::Other);
+        assert_eq!(ChannelKind::from_label("").unwrap(), ChannelKind::Other);
+        assert_eq!(
+            "mystery".parse::<ChannelKind>().unwrap(),
+            ChannelKind::Other
+        );
+        assert_eq!(ChannelKind::Other.label(), "other");
+        assert_eq!(ChannelKind::Other.as_str(), "other");
+        assert!(ChannelKind::Other == "other");
+        assert!(ChannelKind::Other != "nope");
+        assert_eq!(ChannelKind::try_from("nope"), Ok(ChannelKind::Other));
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+    #[cognomen(snake_case, kebab-case)]
+    enum MultiAlias {
+        #[cognomen(alias = "io", alias = "i/o")]
+        IoFailed,
+        OpenFailed,
+    }
+
+    #[test]
+    fn multiple_aliases_and_declared_cases() {
+        assert_eq!(MultiAlias::IoFailed.label(), "io_failed");
+        assert_eq!(MultiAlias::from_label("io").unwrap(), MultiAlias::IoFailed);
+        assert_eq!(MultiAlias::from_label("i/o").unwrap(), MultiAlias::IoFailed);
+        assert_eq!(
+            MultiAlias::from_label("io-failed").unwrap(),
+            MultiAlias::IoFailed
+        );
+        assert!(MultiAlias::IoFailed != "io");
+        assert!(MultiAlias::IoFailed == "io-failed");
+        assert!(MultiAlias::from_label("nope").is_err());
+    }
+
     const fn mode_label_in_const() -> &'static str {
         Mode::LABELS[0]
     }
@@ -796,6 +939,18 @@ mod tests {
         assert_eq!(back, v);
         let kebab: Mode = serde_json::from_str("\"single-process\"").unwrap();
         assert_eq!(kebab, v);
+        let alias_in: ProcessRole = serde_json::from_str("\"main\"").unwrap();
+        assert_eq!(alias_in, ProcessRole::Supervisor);
+        assert_eq!(
+            serde_json::to_string(&ProcessRole::Supervisor).unwrap(),
+            "\"supervisor\""
+        );
+        let unknown_in: ChannelKind = serde_json::from_str("\"nope\"").unwrap();
+        assert_eq!(unknown_in, ChannelKind::Other);
+        assert_eq!(
+            serde_json::to_string(&ChannelKind::Other).unwrap(),
+            "\"other\""
+        );
         let generic = Generic::<3>::LeftHand;
         let gs = serde_json::to_string(&generic).unwrap();
         assert_eq!(gs, "\"left_hand\"");

@@ -1,0 +1,5 @@
+error: alias is only valid on a variant (e.g. #[cognomen(alias = "main")])
+ --> tests/ui/fail_alias_on_enum.rs:4:24
+  |
+4 | #[cognomen(snake_case, alias = "main")]
+  |                        ^^^^^

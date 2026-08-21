@@ -1,0 +1,5 @@
+error: #[cognomen(unknown)] requires a unit variant
+ --> tests/ui/fail_unknown_payload.rs:6:16
+  |
+6 |     #[cognomen(unknown)]
+  |                ^^^^^^^

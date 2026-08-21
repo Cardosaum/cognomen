@@ -36,6 +36,7 @@ use ::clap::Arg;
 use ::clap::Command;
 use ::clap::Error;
 
+use crate::__FromDeclared;
 use crate::Variants;
 
 /// Import this trait to call [`value_parser`](ArgType::value_parser) on a
@@ -44,20 +45,23 @@ use crate::Variants;
 /// Blanket-implemented for every [`Variants`] type that is [`Clone`] and
 /// [`FromStr`] (the derive emits both). The defining crate can stay
 /// `no_std`; only the clap binary enables this feature.
-pub trait ArgType: Variants + FromStr + Clone + Send + Sync + 'static {
-    /// Clap parser that accepts any [`crate::FromLabel`] string and lists
-    /// [`Variants::LABELS`] in `--help`.
+pub trait ArgType: Variants + FromStr + __FromDeclared + Clone + Send + Sync + 'static {
+    /// Clap parser that accepts declared-case labels, `rename`, and `alias`,
+    /// and lists [`Variants::LABELS`] in `--help`. Unmatched input is an
+    /// error even when a variant is marked `unknown`.
     fn value_parser() -> Parser<Self> {
         Parser::new()
     }
 }
 
-impl<T> ArgType for T where T: Variants + FromStr + Clone + Send + Sync + 'static {}
+impl<T> ArgType for T where T: Variants + FromStr + __FromDeclared + Clone + Send + Sync + 'static {}
 
 /// Clap [`TypedValueParser`] for a cognomen enum.
 ///
-/// Built by [`ArgType::value_parser`]. Parse uses [`FromStr`] (every
-/// declared case and `rename`). Help lists the default [`Variants::LABELS`].
+/// Built by [`ArgType::value_parser`]. Parse accepts every declared case,
+/// `rename`, and `alias`. It does **not** follow `#[cognomen(unknown)]`:
+/// unmatched flag input is an error. Help lists the default
+/// [`Variants::LABELS`].
 #[derive(Clone, Copy, Debug)]
 pub struct Parser<T> {
     _ty: PhantomData<fn() -> T>,
@@ -79,7 +83,7 @@ impl<T> Default for Parser<T> {
 
 impl<T> TypedValueParser for Parser<T>
 where
-    T: Variants + FromStr + Clone + Send + Sync + 'static,
+    T: Variants + FromStr + __FromDeclared + Clone + Send + Sync + 'static,
     T::Err: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
 {
     type Value = T;
@@ -91,7 +95,7 @@ where
         value: &std::ffi::OsStr,
     ) -> Result<T, Error> {
         StringValueParser::new()
-            .try_map(|s: std::string::String| T::from_str(&s))
+            .try_map(|s: std::string::String| T::__from_declared(&s))
             .parse_ref(cmd, arg, value)
     }
 

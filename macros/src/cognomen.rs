@@ -149,7 +149,7 @@ fn insert_extra(
     value_span: Span,
 ) -> Result<()> {
     let name = key.to_string();
-    if name == "prefix" || name == "rename" {
+    if name == "prefix" || name == "rename" || name == "alias" || name == "unknown" {
         return Err(syn::Error::new(
             key.span(),
             format!("`{name}` is not an extra method"),
@@ -315,9 +315,34 @@ impl Parse for CognomenAttr {
                         key.span(),
                         "rename is only valid on a variant (e.g. #[cognomen(rename = \"io_error\")])",
                     ));
+                } else if key == "alias" {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        "alias is only valid on a variant (e.g. #[cognomen(alias = \"main\")])",
+                    ));
+                } else if key == "unknown" {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        "unknown is only valid on a variant (e.g. #[cognomen(unknown)])",
+                    ));
                 } else {
                     insert_extra(&mut extras, key, value.value(), value.span())?;
                 }
+            } else if input.peek(Ident) {
+                let ahead = input.fork();
+                let ident: Ident = ahead.parse()?;
+                if ident == "unknown" && !ahead.peek(Token![-]) {
+                    let key: Ident = input.parse()?;
+                    return Err(syn::Error::new(
+                        key.span(),
+                        "unknown is only valid on a variant (e.g. #[cognomen(unknown)])",
+                    ));
+                }
+                let (style, span) = parse_case_style(input)?;
+                if styles.contains(&style) {
+                    return Err(syn::Error::new(span, "duplicate cognomen case style"));
+                }
+                styles.push(style);
             } else {
                 let (style, span) = parse_case_style(input)?;
                 if styles.contains(&style) {
@@ -346,42 +371,83 @@ impl Parse for CognomenAttr {
 
 struct VariantAttr {
     rename: Option<syn::LitStr>,
+    aliases: Vec<syn::LitStr>,
+    unknown: Option<Span>,
     extras: Vec<(String, syn::LitStr)>,
 }
 
 impl Parse for VariantAttr {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let mut rename = None;
+        let mut aliases = Vec::new();
+        let mut unknown = None;
         let mut extras = Vec::new();
         while !input.is_empty() {
-            let (key, value) = parse_key_litstr(input)?;
-            if key == "rename" {
-                if value.value().is_empty() {
-                    return Err(syn::Error::new(
-                        value.span(),
-                        "cognomen rename must not be empty",
-                    ));
-                }
-                set_once(&mut rename, value, key.span(), "duplicate cognomen rename")?;
-            } else {
-                let name = key.to_string();
-                if extras.iter().any(|(n, _)| n == &name) {
+            if input.peek(Ident) && !input.peek2(Token![=]) && !input.peek2(syn::token::Paren) {
+                let key: Ident = input.parse()?;
+                if key == "unknown" {
+                    set_once(
+                        &mut unknown,
+                        key.span(),
+                        key.span(),
+                        "duplicate cognomen unknown",
+                    )?;
+                } else {
                     return Err(syn::Error::new(
                         key.span(),
-                        format!("duplicate extra `{name}` on variant"),
+                        "expected `key = \"...\"` or `key(\"...\")`",
                     ));
                 }
-                extras.push((name, value));
+            } else {
+                let (key, value) = parse_key_litstr(input)?;
+                if key == "rename" {
+                    if value.value().is_empty() {
+                        return Err(syn::Error::new(
+                            value.span(),
+                            "cognomen rename must not be empty",
+                        ));
+                    }
+                    set_once(&mut rename, value, key.span(), "duplicate cognomen rename")?;
+                } else if key == "alias" {
+                    if value.value().is_empty() {
+                        return Err(syn::Error::new(
+                            value.span(),
+                            "cognomen alias must not be empty",
+                        ));
+                    }
+                    aliases.push(value);
+                } else if key == "unknown" {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        "unknown does not take a value (use #[cognomen(unknown)])",
+                    ));
+                } else {
+                    let name = key.to_string();
+                    if extras.iter().any(|(n, _)| n == &name) {
+                        return Err(syn::Error::new(
+                            key.span(),
+                            format!("duplicate extra `{name}` on variant"),
+                        ));
+                    }
+                    extras.push((name, value));
+                }
             }
             eat_comma(input)?;
         }
-        Ok(Self { rename, extras })
+        Ok(Self {
+            rename,
+            aliases,
+            unknown,
+            extras,
+        })
     }
 }
 
 struct Variant<'a> {
     ident: &'a Ident,
     rename: Option<String>,
+    aliases: Vec<String>,
+    unknown: Option<Span>,
     extras: BTreeMap<String, syn::LitStr>,
     fields: FieldsKind,
 }
@@ -402,6 +468,15 @@ impl Variant<'_> {
         if let Some(r) = &self.rename {
             labels.push(r.clone());
         }
+        labels.sort();
+        labels.dedup();
+        labels
+    }
+
+    /// Declared labels plus parse-only aliases. Used by `FromStr` / serde-in.
+    fn parse_labels(&self, styles: &[CaseStyle]) -> Vec<String> {
+        let mut labels = self.all_labels(styles);
+        labels.extend(self.aliases.iter().cloned());
         labels.sort();
         labels.dedup();
         labels
@@ -712,23 +787,38 @@ fn ensure_extra(extras: &mut Vec<(String, ExtraDecl)>, name: String, span: Span)
     ));
 }
 
+struct VariantMeta {
+    rename: Option<String>,
+    aliases: Vec<String>,
+    unknown: Option<Span>,
+    extras: BTreeMap<String, syn::LitStr>,
+}
+
 fn parse_variant_meta(
     variant: &syn::Variant,
     declared: &mut Vec<(String, ExtraDecl)>,
-) -> Result<(Option<String>, BTreeMap<String, syn::LitStr>)> {
+) -> Result<VariantMeta> {
     let mut extras = BTreeMap::new();
     let mut rename = None;
+    let mut aliases = Vec::new();
+    let mut unknown = None;
 
     if let Some(attr) = find_cognomen_attr(&variant.attrs, "duplicate #[cognomen(...)] on variant")?
     {
         let parsed: VariantAttr = attr.parse_args()?;
-        if parsed.rename.is_none() && parsed.extras.is_empty() {
+        if parsed.rename.is_none()
+            && parsed.aliases.is_empty()
+            && parsed.unknown.is_none()
+            && parsed.extras.is_empty()
+        {
             return Err(syn::Error::new(
                 attr.span(),
-                "variant #[cognomen(...)] requires rename = \"...\" or an extra method",
+                "variant #[cognomen(...)] requires rename = \"...\", alias = \"...\", unknown, or an extra method",
             ));
         }
         rename = parsed.rename.map(|l| l.value());
+        aliases = parsed.aliases.iter().map(syn::LitStr::value).collect();
+        unknown = parsed.unknown;
         for (name, lit) in parsed.extras {
             if extras.contains_key(&name) {
                 return Err(syn::Error::new(
@@ -741,7 +831,12 @@ fn parse_variant_meta(
         }
     }
 
-    Ok((rename, extras))
+    Ok(VariantMeta {
+        rename,
+        aliases,
+        unknown,
+        extras,
+    })
 }
 
 fn enum_variants<'a>(
@@ -757,11 +852,13 @@ fn enum_variants<'a>(
 
     let mut variants = Vec::with_capacity(data.variants.len());
     for variant in &data.variants {
-        let (rename, extras) = parse_variant_meta(variant, declared)?;
+        let meta = parse_variant_meta(variant, declared)?;
         let parsed = Variant {
             ident: &variant.ident,
-            rename,
-            extras,
+            rename: meta.rename,
+            aliases: meta.aliases,
+            unknown: meta.unknown,
+            extras: meta.extras,
             fields: FieldsKind::from_fields(&variant.fields),
         };
         for (name, lit) in &parsed.extras {
@@ -774,6 +871,22 @@ fn enum_variants<'a>(
             input.ident.span(),
             "Cognomen enum must have at least one variant",
         ));
+    }
+    let marked_unknown: Vec<&Variant<'_>> =
+        variants.iter().filter(|v| v.unknown.is_some()).collect();
+    if marked_unknown.len() > 1 {
+        return Err(syn::Error::new(
+            marked_unknown[1].unknown.unwrap(),
+            "only one variant may be marked #[cognomen(unknown)]",
+        ));
+    }
+    if let Some(v) = marked_unknown.first() {
+        if v.fields.has_payload() {
+            return Err(syn::Error::new(
+                v.unknown.unwrap(),
+                "#[cognomen(unknown)] requires a unit variant",
+            ));
+        }
     }
     Ok(variants)
 }
@@ -788,12 +901,17 @@ fn reverse_eq_arms(
     let mut eq_arms = Vec::new();
 
     for v in variants {
-        let labels = v.all_labels(styles);
-        let lits: Vec<syn::LitStr> = labels
+        let eq_labels = v.all_labels(styles);
+        let parse_labels = v.parse_labels(styles);
+        let parse_lits: Vec<syn::LitStr> = parse_labels
             .iter()
             .map(|label| syn::LitStr::new(label, v.ident.span()))
             .collect();
-        for label in &labels {
+        let eq_lits: Vec<syn::LitStr> = eq_labels
+            .iter()
+            .map(|label| syn::LitStr::new(label, v.ident.span()))
+            .collect();
+        for label in &parse_labels {
             if let Some(prev) = owner.insert(label.clone(), v.ident) {
                 if prev != v.ident {
                     return Err(syn::Error::new(
@@ -805,8 +923,8 @@ fn reverse_eq_arms(
         }
         let ident = v.ident;
         let pat = v.ignore_pat();
-        reverse_arms.push(quote! { #(#lits)|* => ::core::result::Result::Ok(#name::#ident) });
-        eq_arms.push(quote! { #pat => matches!(other, #(#lits)|*) });
+        reverse_arms.push(quote! { #(#parse_lits)|* => ::core::result::Result::Ok(#name::#ident) });
+        eq_arms.push(quote! { #pat => matches!(other, #(#eq_lits)|*) });
     }
 
     Ok((reverse_arms, eq_arms, owner.into_keys().collect()))
@@ -874,6 +992,15 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
     let crate_path = &attr.crate_path;
     let default = attr.styles[0];
     let fieldless = variants.iter().all(|v| !v.fields.has_payload());
+    if let Some(v) = variants.iter().find(|v| v.unknown.is_some()) {
+        if !fieldless {
+            return Err(syn::Error::new(
+                v.unknown.unwrap(),
+                "#[cognomen(unknown)] is only valid on a fieldless enum",
+            ));
+        }
+    }
+    let unknown_ident = variants.iter().find_map(|v| v.unknown.map(|_| v.ident));
     let default_labels: Vec<String> = variants.iter().map(|v| v.default_label(default)).collect();
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -941,6 +1068,13 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         }
     });
 
+    let parse_catchall = match unknown_ident {
+        Some(ident) => quote! { _ => ::core::result::Result::Ok(#name::#ident) },
+        None => {
+            quote! { _ => ::core::result::Result::Err(#crate_path::FromLabelError::new(s)) }
+        }
+    };
+
     let parse_impls = fieldless.then(|| quote! {
         impl #impl_generics #crate_path::FromLabel for #name #ty_generics #where_clause {
             #[inline]
@@ -955,7 +1089,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
             fn try_from(s: &str) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
                 match s {
                     #(#reverse_arms,)*
-                    _ => ::core::result::Result::Err(#crate_path::FromLabelError::new(s)),
+                    #parse_catchall
                 }
             }
         }
@@ -967,6 +1101,18 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
                 ::core::convert::TryFrom::try_from(s)
             }
         }
+
+        impl #impl_generics #crate_path::__FromDeclared for #name #ty_generics #where_clause {
+            #[inline]
+            fn __from_declared(
+                s: &str,
+            ) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
+                match s {
+                    #(#reverse_arms,)*
+                    _ => ::core::result::Result::Err(#crate_path::FromLabelError::new(s)),
+                }
+            }
+        }
     });
 
     let de_impl_generics = {
@@ -976,6 +1122,15 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
         } else {
             quote! { <'de, #params> }
         }
+    };
+
+    let serde_catchall = match unknown_ident {
+        Some(ident) => quote! { _ => ::core::result::Result::Ok(#name::#ident) },
+        None => quote! {
+            _ => ::core::result::Result::Err(
+                E::unknown_variant(v, &[#(#all_labels,)*]),
+            )
+        },
     };
 
     let serde_impls = (fieldless && cfg!(feature = "serde")).then(|| {
@@ -1010,9 +1165,7 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
                         ) -> ::core::result::Result<Self::Value, E> {
                             match v {
                                 #(#reverse_arms,)*
-                                _ => ::core::result::Result::Err(
-                                    E::unknown_variant(v, &[#(#all_labels,)*]),
-                                ),
+                                #serde_catchall
                             }
                         }
                         fn visit_borrowed_str<E: #crate_path::__serde::de::Error>(
@@ -1355,6 +1508,27 @@ mod tests {
         );
         assert_err(
             quote! {
+                #[cognomen(snake_case, alias = "main")]
+                enum Mode { A }
+            },
+            "alias is only valid on a variant",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, unknown = "x")]
+                enum Mode { A }
+            },
+            "unknown is only valid on a variant",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, unknown)]
+                enum Mode { A }
+            },
+            "unknown is only valid on a variant",
+        );
+        assert_err(
+            quote! {
                 #[cognomen(snake_case, snake)]
                 enum Mode { A }
             },
@@ -1408,6 +1582,20 @@ mod tests {
                 enum Mode { A }
             },
             "`rename` is not an extra method",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, alias())]
+                enum Mode { A }
+            },
+            "`alias` is not an extra method",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case, unknown())]
+                enum Mode { A }
+            },
+            "`unknown` is not an extra method",
         );
         assert_err(
             quote! {
@@ -1496,6 +1684,16 @@ mod tests {
             quote! {
                 #[cognomen(snake_case)]
                 enum Mode {
+                    #[cognomen(alias = "")]
+                    A,
+                }
+            },
+            "cognomen alias must not be empty",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
                     #[cognomen(rename = "a", rename = "b")]
                     A,
                 }
@@ -1531,7 +1729,7 @@ mod tests {
                     A,
                 }
             },
-            "variant #[cognomen(...)] requires rename = \"...\" or an extra method",
+            "variant #[cognomen(...)] requires rename = \"...\", alias = \"...\", unknown, or an extra method",
         );
         assert_err(
             quote! {
@@ -1560,6 +1758,82 @@ mod tests {
                 }
             },
             "generated label `zero` is shared by multiple variants",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(lower)]
+                enum Collide {
+                    #[cognomen(alias = "zero")]
+                    Other,
+                    Zero,
+                }
+            },
+            "generated label `zero` is shared by multiple variants",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(lower)]
+                enum Collide {
+                    #[cognomen(alias = "x")]
+                    A,
+                    #[cognomen(alias = "x")]
+                    B,
+                }
+            },
+            "generated label `x` is shared by multiple variants",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(unknown)]
+                    A,
+                    #[cognomen(unknown)]
+                    B,
+                }
+            },
+            "only one variant may be marked #[cognomen(unknown)]",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(unknown, unknown)]
+                    A,
+                }
+            },
+            "duplicate cognomen unknown",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(unknown = "x")]
+                    A,
+                }
+            },
+            "unknown does not take a value",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    #[cognomen(unknown)]
+                    Other { tag: &'static str },
+                }
+            },
+            "#[cognomen(unknown)] requires a unit variant",
+        );
+        assert_err(
+            quote! {
+                #[cognomen(snake_case)]
+                enum Mode {
+                    Named { x: u8 },
+                    #[cognomen(unknown)]
+                    Other,
+                }
+            },
+            "#[cognomen(unknown)] is only valid on a fieldless enum",
         );
     }
 
@@ -1593,6 +1867,43 @@ mod tests {
                 #[cognomen(rename = "io_error")]
                 IoFailed,
                 OpenFailed,
+            }
+        });
+        let aliased = ok(quote! {
+            #[cognomen(snake_case)]
+            enum Role {
+                #[cognomen(alias = "main")]
+                Supervisor,
+                Worker,
+            }
+        });
+        assert!(aliased.contains("main"));
+        assert!(aliased.contains("FromLabel"));
+        ok(quote! {
+            #[cognomen(snake_case)]
+            enum Role {
+                #[cognomen(alias = "main", alias = "lead")]
+                Supervisor,
+                Worker,
+            }
+        });
+        let unknown = ok(quote! {
+            #[cognomen(snake_case)]
+            enum Kind {
+                Trades,
+                #[cognomen(unknown)]
+                Other,
+            }
+        });
+        assert!(unknown.contains("FromLabel"));
+        assert!(unknown.contains("__FromDeclared"));
+        ok(quote! {
+            #[cognomen(snake_case)]
+            enum Kind {
+                #[cognomen(rename = "io_error", alias = "io")]
+                IoFailed,
+                #[cognomen(unknown, blurb = "catch-all")]
+                Other,
             }
         });
         ok(quote! {

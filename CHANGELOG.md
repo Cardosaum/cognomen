@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- variant `alias = "..."`: extra parse-in strings that do not change
+  `label()`, `as_str()`, serde-out, `PartialEq<str>`, or `in_case`. Empty
+  `""` is a compile error
+- variant `unknown`: unmatched parse and serde-in become that unit variant
+  on a fieldless enum. The unmatched string is not stored. clap
+  `value_parser` still rejects unmatched input
+
 ## [0.5.0](https://github.com/Cardosaum/cognomen/compare/cognomen-v0.4.0...cognomen-v0.5.0) - 2026-08-16
 
 ### Other

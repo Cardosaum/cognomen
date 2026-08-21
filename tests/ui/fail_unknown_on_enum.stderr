@@ -1,0 +1,5 @@
+error: unknown is only valid on a variant (e.g. #[cognomen(unknown)])
+ --> tests/ui/fail_unknown_on_enum.rs:4:24
+  |
+4 | #[cognomen(snake_case, unknown)]
+  |                        ^^^^^^^

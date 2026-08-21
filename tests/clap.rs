@@ -6,6 +6,7 @@ use clap::Command;
 use clap::Parser;
 use cognomen::clap::ArgType;
 use cognomen::Cognomen;
+use cognomen::FromLabel;
 use cognomen::Variants;
 use rstest::rstest;
 
@@ -32,6 +33,22 @@ enum Wire {
     OpenFailed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+#[cognomen(snake_case)]
+enum Role {
+    #[cognomen(alias = "main")]
+    Supervisor,
+    Worker,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Cognomen)]
+#[cognomen(snake_case)]
+enum Channel {
+    Trades,
+    #[cognomen(unknown)]
+    Other,
+}
+
 #[derive(Debug, Parser)]
 #[command(name = "prog")]
 struct ModeCli {
@@ -51,6 +68,20 @@ struct KindCli {
 struct WireCli {
     #[arg(long, value_parser = Wire::value_parser())]
     wire: Wire,
+}
+
+#[derive(Debug, Parser)]
+#[command(name = "prog")]
+struct RoleCli {
+    #[arg(long, value_parser = Role::value_parser())]
+    role: Role,
+}
+
+#[derive(Debug, Parser)]
+#[command(name = "prog")]
+struct ChannelCli {
+    #[arg(long, value_parser = Channel::value_parser())]
+    channel: Channel,
 }
 
 #[derive(Debug, Parser)]
@@ -106,6 +137,45 @@ fn wire_parses_rename_and_aliases(#[case] input: &str, #[case] want: Wire) {
 }
 
 #[rstest]
+#[case::label("supervisor", Role::Supervisor)]
+#[case::alias("main", Role::Supervisor)]
+#[case::worker("worker", Role::Worker)]
+fn role_parses_alias(#[case] input: &str, #[case] want: Role) {
+    let cli = RoleCli::try_parse_from(["prog", "--role", input]).unwrap();
+    assert_eq!(cli.role, want);
+}
+
+#[test]
+fn role_rejects_empty_alias() {
+    assert!(RoleCli::try_parse_from(["prog", "--role", ""]).is_err());
+}
+
+#[test]
+fn channel_label_of_unknown_variant_is_a_valid_flag() {
+    let cli = ChannelCli::try_parse_from(["prog", "--channel", "trades"]).unwrap();
+    assert_eq!(cli.channel, Channel::Trades);
+    let cli = ChannelCli::try_parse_from(["prog", "--channel", "other"]).unwrap();
+    assert_eq!(cli.channel, Channel::Other);
+}
+
+#[rstest]
+#[case::garbage("nope")]
+#[case::empty("")]
+fn clap_rejects_unknown_fallback_while_wire_accepts(#[case] input: &str) {
+    assert!(
+        ChannelCli::try_parse_from(["prog", "--channel", input]).is_err(),
+        "clap must reject {input:?}"
+    );
+    assert_eq!(Channel::from_label(input).unwrap(), Channel::Other);
+    #[cfg(feature = "serde")]
+    {
+        let json = format!("\"{input}\"");
+        let got: Channel = serde_json::from_str(&json).unwrap();
+        assert_eq!(got, Channel::Other);
+    }
+}
+
+#[rstest]
 #[case::unknown("nope")]
 #[case::pascal("SingleProcess")]
 #[case::screaming("SINGLE_PROCESS")]
@@ -154,6 +224,8 @@ fn builder_parses_kind(#[case] input: &str, #[case] want: Option<Kind>) {
 #[case::mode(possible::<Mode>(), Mode::LABELS)]
 #[case::kind(possible::<Kind>(), Kind::LABELS)]
 #[case::wire(possible::<Wire>(), Wire::LABELS)]
+#[case::role(possible::<Role>(), Role::LABELS)]
+#[case::channel(possible::<Channel>(), Channel::LABELS)]
 fn possible_values_are_default_labels(#[case] got: Vec<String>, #[case] want: &[&str]) {
     assert_eq!(got, want);
 }
@@ -162,6 +234,8 @@ fn possible_values_are_default_labels(#[case] got: Vec<String>, #[case] want: &[
 #[case::mode(cmd("mode", Mode::value_parser()), Mode::LABELS, &["single-process"])]
 #[case::kind(cmd("kind", Kind::value_parser()), Kind::LABELS, &["MIC"])]
 #[case::wire(cmd("wire", Wire::value_parser()), Wire::LABELS, &["io-failed"])]
+#[case::role(cmd("role", Role::value_parser()), Role::LABELS, &["main"])]
+#[case::channel(cmd("channel", Channel::value_parser()), Channel::LABELS, &["nope"])]
 fn help_lists_default_labels_not_aliases(
     #[case] mut command: Command,
     #[case] labels: &[&str],

@@ -1,0 +1,5 @@
+error: #[cognomen(unknown)] is only valid on a fieldless enum
+ --> tests/ui/fail_unknown_fielded.rs:7:16
+  |
+7 |     #[cognomen(unknown)]
+  |                ^^^^^^^
