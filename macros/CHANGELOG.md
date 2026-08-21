@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/Cardosaum/cognomen/compare/cognomen-macros-v0.5.0...cognomen-macros-v0.5.1) - 2026-08-21
+
+### Added
+
+- parse aliases and an explicit unknown variant ([#12](https://github.com/Cardosaum/cognomen/pull/12))
+
 ### Added
 
 - variant `alias = "..."` parse-in strings (not `label()` / serde-out /
