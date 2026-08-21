@@ -787,15 +787,17 @@ fn ensure_extra(extras: &mut Vec<(String, ExtraDecl)>, name: String, span: Span)
     ));
 }
 
+struct VariantMeta {
+    rename: Option<String>,
+    aliases: Vec<String>,
+    unknown: Option<Span>,
+    extras: BTreeMap<String, syn::LitStr>,
+}
+
 fn parse_variant_meta(
     variant: &syn::Variant,
     declared: &mut Vec<(String, ExtraDecl)>,
-) -> Result<(
-    Option<String>,
-    Vec<String>,
-    Option<Span>,
-    BTreeMap<String, syn::LitStr>,
-)> {
+) -> Result<VariantMeta> {
     let mut extras = BTreeMap::new();
     let mut rename = None;
     let mut aliases = Vec::new();
@@ -829,7 +831,12 @@ fn parse_variant_meta(
         }
     }
 
-    Ok((rename, aliases, unknown, extras))
+    Ok(VariantMeta {
+        rename,
+        aliases,
+        unknown,
+        extras,
+    })
 }
 
 fn enum_variants<'a>(
@@ -845,13 +852,13 @@ fn enum_variants<'a>(
 
     let mut variants = Vec::with_capacity(data.variants.len());
     for variant in &data.variants {
-        let (rename, aliases, unknown, extras) = parse_variant_meta(variant, declared)?;
+        let meta = parse_variant_meta(variant, declared)?;
         let parsed = Variant {
             ident: &variant.ident,
-            rename,
-            aliases,
-            unknown,
-            extras,
+            rename: meta.rename,
+            aliases: meta.aliases,
+            unknown: meta.unknown,
+            extras: meta.extras,
             fields: FieldsKind::from_fields(&variant.fields),
         };
         for (name, lit) in &parsed.extras {
