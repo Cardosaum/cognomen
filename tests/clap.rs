@@ -6,6 +6,7 @@ use clap::Command;
 use clap::Parser;
 use cognomen::clap::ArgType;
 use cognomen::Cognomen;
+use cognomen::FromLabel;
 use cognomen::Variants;
 use rstest::rstest;
 
@@ -149,13 +150,29 @@ fn role_rejects_empty_alias() {
     assert!(RoleCli::try_parse_from(["prog", "--role", ""]).is_err());
 }
 
+#[test]
+fn channel_label_of_unknown_variant_is_a_valid_flag() {
+    let cli = ChannelCli::try_parse_from(["prog", "--channel", "trades"]).unwrap();
+    assert_eq!(cli.channel, Channel::Trades);
+    let cli = ChannelCli::try_parse_from(["prog", "--channel", "other"]).unwrap();
+    assert_eq!(cli.channel, Channel::Other);
+}
+
 #[rstest]
-#[case::known("trades", Channel::Trades)]
-#[case::unknown("nope", Channel::Other)]
-#[case::empty("", Channel::Other)]
-fn channel_unknown_accepts_unmatched(#[case] input: &str, #[case] want: Channel) {
-    let cli = ChannelCli::try_parse_from(["prog", "--channel", input]).unwrap();
-    assert_eq!(cli.channel, want);
+#[case::garbage("nope")]
+#[case::empty("")]
+fn clap_rejects_unknown_fallback_while_wire_accepts(#[case] input: &str) {
+    assert!(
+        ChannelCli::try_parse_from(["prog", "--channel", input]).is_err(),
+        "clap must reject {input:?}"
+    );
+    assert_eq!(Channel::from_label(input).unwrap(), Channel::Other);
+    #[cfg(feature = "serde")]
+    {
+        let json = format!("\"{input}\"");
+        let got: Channel = serde_json::from_str(&json).unwrap();
+        assert_eq!(got, Channel::Other);
+    }
 }
 
 #[rstest]
@@ -208,6 +225,7 @@ fn builder_parses_kind(#[case] input: &str, #[case] want: Option<Kind>) {
 #[case::kind(possible::<Kind>(), Kind::LABELS)]
 #[case::wire(possible::<Wire>(), Wire::LABELS)]
 #[case::role(possible::<Role>(), Role::LABELS)]
+#[case::channel(possible::<Channel>(), Channel::LABELS)]
 fn possible_values_are_default_labels(#[case] got: Vec<String>, #[case] want: &[&str]) {
     assert_eq!(got, want);
 }
@@ -217,6 +235,7 @@ fn possible_values_are_default_labels(#[case] got: Vec<String>, #[case] want: &[
 #[case::kind(cmd("kind", Kind::value_parser()), Kind::LABELS, &["MIC"])]
 #[case::wire(cmd("wire", Wire::value_parser()), Wire::LABELS, &["io-failed"])]
 #[case::role(cmd("role", Role::value_parser()), Role::LABELS, &["main"])]
+#[case::channel(cmd("channel", Channel::value_parser()), Channel::LABELS, &["nope"])]
 fn help_lists_default_labels_not_aliases(
     #[case] mut command: Command,
     #[case] labels: &[&str],

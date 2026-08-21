@@ -77,7 +77,9 @@ serde out). `PartialEq<str>` on `E` compares the **label**, not an extra.
   the key for more than one alias. Empty `""` is a compile error.
 - `#[cognomen(unknown)]`: unmatched parse and serde-in become this unit
   variant. Fieldless enums only; exactly one such variant. The unmatched
-  string is not stored. Do not default a catch-all; mark it explicitly.
+  string is not stored. clap `value_parser` still rejects unmatched input:
+  unknown is a wire fallback, not a flag fallback. Do not default a
+  catch-all; mark it explicitly.
 
 ```rust
 use cognomen::{Case, Cognomen, FromLabel, Label};
@@ -255,7 +257,7 @@ For `#[cognomen(snake_case, kebab-case)]` on `E`. Nothing is inherent on `E`.
 | `AsRef<str>`, `PartialEq<str>` | compare against any declared **label**, not an alias |
 | `TryFrom<&str>`, `FromStr`, `FromLabel` | fieldless; cases, `rename`, `alias`; `unknown` if marked |
 | `Serialize` / `Deserialize` | feature `serde`, fieldless; out is `label()`, in accepts cases, `rename`, `alias`, and `unknown` |
-| `T::value_parser()` | feature `clap`; import `cognomen::clap::ArgType` in the binary |
+| `T::value_parser()` | feature `clap`; declared cases, `rename`, `alias`; does not follow `unknown` |
 
 `numbered` still has inherent `number()`; a follow-up should move that onto a
 trait the same way.

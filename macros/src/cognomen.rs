@@ -1101,6 +1101,18 @@ pub fn derive(input: TokenStream) -> Result<TokenStream> {
                 ::core::convert::TryFrom::try_from(s)
             }
         }
+
+        impl #impl_generics #crate_path::__FromDeclared for #name #ty_generics #where_clause {
+            #[inline]
+            fn __from_declared(
+                s: &str,
+            ) -> ::core::result::Result<Self, #crate_path::FromLabelError> {
+                match s {
+                    #(#reverse_arms,)*
+                    _ => ::core::result::Result::Err(#crate_path::FromLabelError::new(s)),
+                }
+            }
+        }
     });
 
     let de_impl_generics = {
@@ -1884,6 +1896,7 @@ mod tests {
             }
         });
         assert!(unknown.contains("FromLabel"));
+        assert!(unknown.contains("__FromDeclared"));
         ok(quote! {
             #[cognomen(snake_case)]
             enum Kind {

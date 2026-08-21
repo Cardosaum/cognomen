@@ -40,7 +40,7 @@ use proc_macro::TokenStream;
 ///
 /// `#[cognomen(unknown)]` on exactly one unit variant of a fieldless enum
 /// sends unmatched parse and serde-in to that variant. The unmatched string
-/// is not stored.
+/// is not stored. clap `value_parser` still rejects unmatched input.
 ///
 /// # Extras
 ///

@@ -49,6 +49,7 @@ pub trait Label {
 /// Implemented only for fieldless enums: a label cannot rebuild a payload.
 /// A variant marked `#[cognomen(unknown)]` receives unmatched strings
 /// instead of [`crate::FromLabelError`]; that path is not a bijection.
+/// clap `value_parser` does not follow that fallback.
 pub trait FromLabel: Sized {
     /// Parse any declared-case label, a variant `rename`, or a variant
     /// `alias`, into `Self`.
@@ -57,4 +58,15 @@ pub trait FromLabel: Sized {
     /// enum marks a unit variant `unknown`, unmatched input becomes that
     /// variant and this never returns [`crate::FromLabelError`].
     fn from_label(s: &str) -> Result<Self, crate::FromLabelError>;
+}
+
+/// Closed parse used by clap: declared cases, `rename`, and `alias` only.
+///
+/// Does not follow `#[cognomen(unknown)]`. Unmatched input is always an
+/// error so flag garbage cannot become the fallback variant.
+#[doc(hidden)]
+pub trait __FromDeclared: Sized {
+    /// Parse a declared-case label, `rename`, or `alias`, never the unknown
+    /// fallback.
+    fn __from_declared(s: &str) -> Result<Self, crate::FromLabelError>;
 }

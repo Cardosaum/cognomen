@@ -72,7 +72,9 @@
 //!   Repeat the key for more than one alias. Empty `""` is a compile error.
 //! - `#[cognomen(unknown)]`: unmatched parse and serde-in become this unit
 //!   variant. Fieldless enums only; exactly one such variant. The unmatched
-//!   string is not stored. Do not default a catch-all; mark it explicitly.
+//!   string is not stored. clap `value_parser` still rejects unmatched
+//!   input: unknown is a wire fallback, not a flag fallback. Do not default
+//!   a catch-all; mark it explicitly.
 //!
 //! ```
 //! use cognomen::{Case, Cognomen, FromLabel, Label};
@@ -274,7 +276,8 @@
 //!   `label()`, in accepts any declared case, `rename`, or `alias`, and an
 //!   `unknown` variant if marked
 //! - [`clap::ArgType::value_parser`] (feature `clap`): clap flag parser in
-//!   the binary; the enum crate can stay `no_std`
+//!   the binary; the enum crate can stay `no_std`. Accepts declared cases,
+//!   `rename`, and `alias`. Does not follow `unknown`
 //!
 //! Nothing is inherent on `E`. A follow-up in `numbered` should move
 //! `number()` onto a trait the same way.
@@ -331,6 +334,8 @@ mod label;
 pub use cognomen_macros::Cognomen;
 pub use extra::{Blurb, BlurbKey, Extra, Help, HelpKey, Hint, HintKey, Reason, ReasonKey};
 pub use formatted::Formatted;
+#[doc(hidden)]
+pub use label::__FromDeclared;
 pub use label::{Case, FromLabel, Label};
 
 #[cfg(feature = "clap")]
